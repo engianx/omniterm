@@ -1,0 +1,213 @@
+name: Publish @omniterm/plugin-types
+
+# Publishes the type-only plugin contract (packages/plugin-types).
+#
+# DELIBERATELY DIFFERENT FROM publish-host.yml: that workflow auto-bumps the
+# patch version, because a host release is a routine rebuild of the same
+# product. This one does NOT bump anything. The version is a semantic promise
+# to every plugin author — a breaking change to HostContext or TabTypePlugin is
+# a MAJOR bump, a new optional field is a MINOR — so it is chosen by a human in
+# a PR that edits packages/plugin-types/package.json. This workflow only
+# publishes what that file already says, and refuses if that version is taken.
+#
+# Required secret: NPM_TOKEN (npm automation token with publish rights).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run all gates but skip the npm publish (test the workflow itself)"
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pnpm install --frozen-lockfile
+
+      # The contract is re-exported by @omniterm/core and consumed by the
+      # in-repo example plugin, so a whole-workspace typecheck is the gate that
+      # catches a contract change breaking either side.
+      - name: Typecheck workspace (hard gate)
+        run: pnpm -r typecheck
+
+      - name: Tests (hard gate)
+        run: pnpm -r test
+
+      - name: Read the version to publish
+        id: version
+        working-directory: packages/plugin-types
+        run: |
+          set -euo pipefail
+          NEW=$(node -p "require('./package.json').version")
+          echo "Publishing @omniterm/plugin-types@${NEW}"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      # `npm view` exits non-zero for a package that has never been published,
+      # which is the expected state on the very first run — so absence of the
+      # version is success here, not an error.
+      - name: Refuse to republish an existing version
+        run: |
+          set -euo pipefail
+          if npm view "@omniterm/plugin-types@${{ steps.version.outputs.new }}" version > /dev/null 2>&1; then
+            printf '::%s::%s\n' error "@omniterm/plugin-types@${{ steps.version.outputs.new }} is already on npm — bump the version in packages/plugin-types/package.json"
+            exit 1
+          fi
+          echo "Version is free."
+
+      - name: Build
+        working-directory: packages/plugin-types
+        run: pnpm run build
+
+      - name: Pack candidate tarball
+        working-directory: packages/plugin-types
+        run: |
+          set -euo pipefail
+          pnpm pack --pack-destination /tmp
+          ls -l /tmp/omniterm-plugin-types-*.tgz
+
+      # A types-only package fails in ways an in-repo typecheck cannot see: a
+      # broken `exports` map, a missing .d.ts, or publishConfig not swapping the
+      # entry points. The only honest test is to install the tarball into a
+      # project that is NOT this workspace and compile a plugin against it.
+      - name: Consumer compile gate (install the tarball, build a real plugin)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/consumer/src && cd /tmp/consumer
+          npm init -y > /dev/null
+          npm pkg set type=module > /dev/null
+          npm install --no-audit --no-fund typescript@^5.8.0 express@^5.2.1 > /dev/null
+          npm install --no-audit --no-fund /tmp/omniterm-plugin-types-*.tgz > /dev/null
+
+          if [ -d node_modules/@omniterm/core ]; then
+            printf '::%s::%s\n' error "@omniterm/core leaked into a consumer install — plugin-types must stand alone"
+            exit 1
+          fi
+
+          cat > tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "bundler",
+              "strict": true,
+              "skipLibCheck": true,
+              "noEmit": true,
+              "types": ["node"]
+            },
+            "include": ["src"]
+          }
+          JSON
+
+          # Exercises every type the real plugins import, including the
+          # workspace shapes reachable through HostContext.
+          cat > src/plugin.ts <<'TS'
+          import express from 'express';
+          import type {
+            HostContext,
+            TabTypePlugin,
+            TabInstance,
+            PluginInstance,
+            SpawnArgs,
+            PluginManifestEntry,
+            Repo,
+            Worktree,
+            Settings,
+          } from '@omniterm/plugin-types';
+
+          export default function createPlugin(): TabTypePlugin {
+            return {
+              type: 'consumer-gate',
+              label: 'Consumer Gate',
+              proxyPrefix: '',
+              createRouter(host: HostContext) {
+                const router = express.Router();
+                router.get('/instances', (_req, res) => {
+                  const settings: Settings = host.settings();
+                  const repos: Repo[] = host.repos();
+                  const trees: Worktree[] = repos.length
+                    ? host.worktrees(repos[0]!.path, repos[0]!.id)
+                    : [];
+                  const items: PluginInstance[] = [
+                    { id: 'a', name: 'a', status: 'running' },
+                  ];
+                  host.broadcast('consumer-gate', {
+                    shell: settings.defaultShell,
+                    trees: trees.length,
+                  });
+                  res.json({ items });
+                });
+                return router as unknown as ReturnType<TabTypePlugin['createRouter']>;
+              },
+              async spawn(args: SpawnArgs): Promise<TabInstance> {
+                const confined = args.openFile ?? args.workspaceRoot;
+                return {
+                  tabId: 't1',
+                  type: 'consumer-gate',
+                  name: confined,
+                  async close() {},
+                };
+              },
+              manifest: {
+                type: 'consumer-gate',
+                label: 'Consumer Gate',
+                endpoints: { create: '/instances', list: '/instances' },
+                iframe: { urlTemplate: '/consumer/{id}/' },
+              } satisfies PluginManifestEntry,
+            };
+          }
+          TS
+
+          npx tsc --noEmit
+          echo "Consumer compiled against the published contract."
+
+      # `files` ships dist/ only, so a map would reference an index.ts that is
+      # not in the tarball. Also matches the project's no-source-maps rule.
+      - name: Assert tarball shape (types present, no source maps)
+        run: |
+          set -euo pipefail
+          LIST=$(tar tzf /tmp/omniterm-plugin-types-*.tgz)
+          echo "$LIST"
+          for required in package/dist/index.d.ts package/dist/index.js package/README.md package/LICENSE; do
+            if ! printf '%s\n' "$LIST" | grep -qx "$required"; then
+              printf '::%s::%s\n' error "Tarball is missing $required"
+              exit 1
+            fi
+          done
+          if printf '%s\n' "$LIST" | grep -q '\.map$'; then
+            printf '::%s::%s\n' error "Tarball contains source maps — see packages/plugin-types/tsconfig.build.json"
+            exit 1
+          fi
+
+      - name: npm publish --dry-run
+        working-directory: packages/plugin-types
+        run: pnpm publish --dry-run --no-git-checks --access public
+
+      - name: npm publish
+        if: ${{ !inputs.dry_run }}
+        working-directory: packages/plugin-types
+        run: pnpm publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## @omniterm/plugin-types release"
+            echo ""
+            echo "- Version: \`${{ steps.version.outputs.new }}\` (read from package.json, not auto-bumped)"
+            echo "- Dry run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

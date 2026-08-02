@@ -1,0 +1,21 @@
+{
+  "name": "omniterm-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "dev": "pnpm --filter @omniterm/host dev",
+    "agent:verify": "tsx tests/agent/run-agent-verification.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@omniterm/fixture-plugin": "workspace:*",
+    "@omniterm/demo-agent-plugin": "workspace:*"
+  },
+  "packageManager": "pnpm@11.1.2"
+}

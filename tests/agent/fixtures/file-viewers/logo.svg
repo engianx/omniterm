@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120">
+  <rect width="240" height="120" fill="#2d6cdf"/>
+  <text x="20" y="65" fill="white" font-size="24">SVG OK</text>
+  <script type="text/javascript">
+    /* If this runs, the viewer injected SVG markup (XSS) — the test must catch it. */
+    console.error('SVG-SCRIPT-EXECUTED-FAIL');
+    try { document.title = 'SVG-PWNED'; } catch (e) {}
+  </script>
+</svg>

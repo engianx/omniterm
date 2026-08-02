@@ -1,0 +1,60 @@
+{
+  "name": "@omniterm/plugin-types",
+  "version": "0.1.0",
+  "description": "Type-only contract between omniterm and its tab-type plugins: TabTypePlugin, HostContext, PluginInstance, and the workspace shapes they carry. No runtime code.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "omniterm",
+    "plugin",
+    "types",
+    "terminal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/engianx/omniterm.git",
+    "directory": "packages/plugin-types"
+  },
+  "homepage": "https://github.com/engianx/omniterm/tree/main/packages/plugin-types#readme",
+  "bugs": {
+    "url": "https://github.com/engianx/omniterm/issues"
+  },
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "import": "./index.ts"
+    }
+  },
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.12.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

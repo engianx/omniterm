@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist",
+    "declaration": true,
+    // No source maps: `files` ships dist/ only, so a map referencing ../index.ts
+    // would point at a file that isn't in the tarball. The .d.ts IS the source
+    // for a types-only package.
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["index.ts"],
+  "exclude": ["node_modules", "dist"]
+}

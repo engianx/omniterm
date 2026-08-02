@@ -1,0 +1,6 @@
+#!/bin/sh
+# xdg-open shim — present in PATH only inside omniterm tmux sessions
+# (sessions.ts prepends our bin dir). Outside an omniterm tab the system
+# /usr/bin/xdg-open is unaffected. Forwards every URL/file argument to
+# omniterm-browser, which handles registration with the tab's registry.
+exec "$(dirname "$0")/omniterm-browser.js" "$@"

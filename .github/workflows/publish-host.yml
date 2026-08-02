@@ -1,0 +1,292 @@
+name: Publish @omniterm/host
+
+# Publishes the omniterm CLI (apps/omniterm). The version is bumped
+# AUTOMATICALLY: the workflow reads the live @omniterm/host version from npm,
+# increments the PATCH, writes it to apps/omniterm/package.json, runs every gate,
+# publishes, then pushes the bump commit back to main. Do NOT hand-bump the host
+# version in a PR — just dispatch this workflow and it mints the next patch.
+# (This matches monots' publish-mcp.yml / publish-cli.yml.) The run refuses to
+# publish a version that already exists on npm.
+#
+# Required secrets:
+#   NPM_TOKEN    npm automation token with publish rights.
+#   POSTHOG_KEY  PostHog project key, baked into the bundle at build time (see
+#                the Build step). It is deliberately NOT in source: a source
+#                checkout or a fork's build has no key, so telemetry is off
+#                there. Write-only/public by design, so shipping it inside the
+#                published bundle is safe.
+# The bump commit is pushed to main with the default GITHUB_TOKEN (contents:
+# write) — omniterm's main is unprotected, so no separate release PAT is needed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run all gates but skip npm publish and the bump push (test the workflow itself)"
+        type: boolean
+        default: false
+      size_threshold_pct:
+        description: "Fail if the tarball grows more than this percent vs. the published version"
+        type: string
+        default: "1"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (hard gate)
+        run: pnpm -r typecheck
+
+      # Without tmux the terminal-plugin integration tests self-skip, and the
+      # publish gate would green-light without running the end-to-end proofs
+      # for session env cleanliness (tmux.integration.test.ts).
+      - name: Install tmux (so the integration tests run instead of skipping)
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Tests (hard gate)
+        run: pnpm -r test
+
+      - name: Compute OLD (live npm) and NEW (patch+1) versions
+        id: versions
+        run: |
+          set -euo pipefail
+          OLD=$(npm view @omniterm/host version 2>/dev/null || echo "")
+          if [ -z "$OLD" ]; then
+            printf '::%s::%s\n' error "Could not read the current @omniterm/host version from npm — refusing to guess a version"
+            exit 1
+          fi
+          # Pass OLD via argv, not string-interpolated into the code, so registry
+          # output is never spliced into the script body.
+          NEW=$(node -e "const v=process.argv[1].split('.').map(Number); v[2]++; process.stdout.write(v.join('.'))" "$OLD")
+          echo "OLD=$OLD  NEW=$NEW"
+          echo "old=$OLD" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Assert NEW not already on npm
+        run: |
+          set -euo pipefail
+          if npm view "@omniterm/host@${{ steps.versions.outputs.new }}" version > /dev/null 2>&1; then
+            printf '::%s::%s\n' error "@omniterm/host@${{ steps.versions.outputs.new }} already exists on npm — someone published out of band"
+            exit 1
+          fi
+
+      - name: Bump apps/omniterm/package.json to NEW
+        working-directory: apps/omniterm
+        env:
+          NEW_VERSION: ${{ steps.versions.outputs.new }}
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.NEW_VERSION;fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');"
+          node -p "require('./package.json').version"
+
+      # OMNITERM_POSTHOG_KEY is a BUILD-TIME input here, not a runtime setting:
+      # apps/omniterm/tsup.config.ts inlines it into the server bundle as the
+      # baked default (see packages/core/lib/telemetryConfig.ts). Users set the
+      # same variable at run time to override it. This is the only place the
+      # key exists outside the PostHog project itself.
+      - name: Build (full pipeline)
+        env:
+          OMNITERM_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+        run: pnpm --filter @omniterm/host build
+
+      # A missing/renamed secret would otherwise publish a silently
+      # telemetry-dead release that still looks green.
+      - name: Assert the telemetry key was baked into the bundle
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$POSTHOG_KEY" ]; then
+            printf '::%s::%s\n' error "POSTHOG_KEY secret is empty — the release would ship with telemetry permanently off"
+            exit 1
+          fi
+          if ! grep -qF -- "$POSTHOG_KEY" apps/omniterm/standalone/server/server.js; then
+            printf '::%s::%s\n' error "PostHog key is not present in standalone/server/server.js — the tsup define in apps/omniterm/tsup.config.ts did not take effect"
+            exit 1
+          fi
+          echo "Telemetry key baked into the server bundle."
+
+      - name: Assert build artifacts present
+        working-directory: apps/omniterm
+        run: |
+          set -euo pipefail
+          for f in standalone/server/server.js bin/omniterm.js bin/omniterm-browser.js bin/xdg-open; do
+            if [ ! -s "$f" ]; then
+              printf '::%s::%s\n' error "Missing or empty artifact: $f"
+              exit 1
+            fi
+          done
+          for d in standalone/client standalone/public; do
+            if [ ! -d "$d" ] || [ -z "$(ls -A "$d")" ]; then
+              printf '::%s::%s\n' error "Missing or empty directory: $d"
+              exit 1
+            fi
+          done
+
+      - name: Pack candidate tarball
+        working-directory: apps/omniterm
+        run: |
+          set -euo pipefail
+          pnpm pack
+          ls -1 omniterm-host-*.tgz
+
+      - name: Download baseline tarball (@omniterm/host@OLD)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/baseline-tarball && cd /tmp/baseline-tarball
+          npm pack "@omniterm/host@${{ steps.versions.outputs.old }}"
+
+      - name: Tarball size delta (strict)
+        id: size
+        run: |
+          set -euo pipefail
+          BASELINE=$(stat -c%s /tmp/baseline-tarball/omniterm-host-*.tgz)
+          CANDIDATE=$(stat -c%s "apps/omniterm/omniterm-host-${{ steps.versions.outputs.new }}.tgz")
+          DELTA=$((CANDIDATE - BASELINE))
+          PCT=$(awk -v d="$DELTA" -v b="$BASELINE" 'BEGIN { printf "%.4f", (d / b) * 100 }')
+          echo "baseline_bytes=$BASELINE" >> "$GITHUB_OUTPUT"
+          echo "candidate_bytes=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          echo "delta_pct=$PCT" >> "$GITHUB_OUTPUT"
+          echo "baseline ${{ steps.versions.outputs.old }}: $BASELINE B"
+          echo "candidate ${{ steps.versions.outputs.new }}: $CANDIDATE B"
+          echo "delta: $DELTA B ($PCT%)"
+          THRESHOLD="${{ inputs.size_threshold_pct }}"
+          if awk -v p="$PCT" -v t="$THRESHOLD" 'BEGIN { exit (p > t) ? 0 : 1 }'; then
+            printf '::%s::%s\n' error "Tarball grew $PCT% (threshold +$THRESHOLD%) — get human approval and re-run with a higher size_threshold_pct if intended"
+            exit 1
+          fi
+
+      - name: Baseline install (@omniterm/host@OLD)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/baseline-smoke && cd /tmp/baseline-smoke
+          npm init -y > /dev/null
+          npm install "@omniterm/host@${{ steps.versions.outputs.old }}" 2> baseline.warn || true
+
+      - name: Candidate install (./tarball)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/candidate-smoke && cd /tmp/candidate-smoke
+          npm init -y > /dev/null
+          npm install "${{ github.workspace }}/apps/omniterm/omniterm-host-${{ steps.versions.outputs.new }}.tgz" 2> candidate.warn
+
+      - name: Diff filtered warnings (deprecated | peer | audit)
+        run: |
+          set -uo pipefail
+          PATTERN='deprecated|npm warn peer|npm error|vulnerabilit'
+          grep -E "$PATTERN" /tmp/baseline-smoke/baseline.warn 2>/dev/null | sort -u > /tmp/baseline.filtered || true
+          grep -E "$PATTERN" /tmp/candidate-smoke/candidate.warn 2>/dev/null | sort -u > /tmp/candidate.filtered || true
+          NEW_LINES=$(comm -13 /tmp/baseline.filtered /tmp/candidate.filtered || true)
+          if [ -n "$NEW_LINES" ]; then
+            printf '::%s::%s\n' error "New filtered install warnings vs. baseline ${{ steps.versions.outputs.old }}:"
+            echo "$NEW_LINES"
+            exit 1
+          fi
+          echo "No new filtered warnings."
+
+      - name: Functional smoke (--version / --help)
+        run: |
+          set -euo pipefail
+          cd /tmp/candidate-smoke
+          INSTALLED=$(node -p "require('./node_modules/@omniterm/host/package.json').version")
+          if [ "$INSTALLED" != "${{ steps.versions.outputs.new }}" ]; then
+            printf '::%s::%s\n' error "Installed version $INSTALLED != expected ${{ steps.versions.outputs.new }}"
+            exit 1
+          fi
+          VERSION_OUT=$(node ./node_modules/@omniterm/host/bin/omniterm.js --version)
+          echo "version output: $VERSION_OUT"
+          if [ "$VERSION_OUT" != "${{ steps.versions.outputs.new }}" ]; then
+            printf '::%s::%s\n' error "--version printed '$VERSION_OUT', expected '${{ steps.versions.outputs.new }}'"
+            exit 1
+          fi
+          node ./node_modules/@omniterm/host/bin/omniterm.js --help > /dev/null
+
+      - name: npm publish --dry-run
+        working-directory: apps/omniterm
+        run: pnpm publish --dry-run --no-git-checks --access public
+
+      - name: npm publish
+        if: ${{ !inputs.dry_run }}
+        working-directory: apps/omniterm
+        run: pnpm publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit bump and push main
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git add apps/omniterm/package.json
+          git commit -m "chore(release): bump @omniterm/host to ${{ steps.versions.outputs.new }}"
+          # main can move while this job runs; rebase the bump commit onto the
+          # latest main and retry so a concurrent push doesn't fail the release.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "Pushed bump on attempt $attempt"
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto latest main and retrying"
+            sleep $((attempt * 3))
+            git pull --rebase origin main || {
+              git rebase --abort 2>/dev/null || true
+              printf '::%s::%s\n' error "Rebase onto main failed (attempt $attempt) — aborting"
+              exit 1
+            }
+          done
+          # Push once more after the final rebase so the last rebase isn't wasted.
+          if git push origin HEAD:main; then
+            echo "Pushed bump after final rebase"
+            exit 0
+          fi
+          # npm already has the new version at this point; only the bump commit on
+          # main is missing. The next dispatch self-heals (it bumps from the live
+          # npm version), but to restore main's history now, an on-call engineer can
+          # push the bump commit directly:
+          BUMP_SHA=$(git rev-parse HEAD)
+          printf '::%s::%s\n' error "Published to npm but failed to push the bump commit to main after all retries. Recover with: git push origin ${BUMP_SHA}:main (or re-dispatch — it self-heals from the live npm version)."
+          exit 1
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-diagnostics-host-${{ steps.versions.outputs.new }}
+          path: |
+            apps/omniterm/omniterm-host-*.tgz
+            /tmp/baseline-tarball/omniterm-host-*.tgz
+            /tmp/*-smoke/*.warn
+          if-no-files-found: ignore
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## @omniterm/host release"
+            echo ""
+            echo "- Version: \`${{ steps.versions.outputs.old }}\` → \`${{ steps.versions.outputs.new }}\` (auto patch bump)"
+            echo "- Tarball delta: \`${{ steps.size.outputs.delta_pct }}%\` (threshold +${{ inputs.size_threshold_pct }}%)"
+            echo "- Dry run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

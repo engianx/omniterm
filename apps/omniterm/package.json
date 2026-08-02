@@ -1,0 +1,47 @@
+{
+  "name": "@omniterm/host",
+  "version": "0.2.22",
+  "description": "omniterm \u2014 a generic, browser-based dev host: persistent terminals, a browser-view panel, workspace management, and a runtime plugin API. CLI: omniterm.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "omniterm": "bin/omniterm.js",
+    "omniterm-browser": "bin/omniterm-browser.js"
+  },
+  "files": [
+    "bin/",
+    "standalone/"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "./scripts/package.sh",
+    "prepack": "pnpm run build",
+    "postinstall": "chmod +x bin/xdg-open 2>/dev/null || true",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "http-proxy": "^1.18.1",
+    "ignore": "^7.0.5",
+    "marked": "^18.0.3",
+    "pdfjs-dist": "^5.7.284",
+    "posthog-node": "^5.37.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/http-proxy": "^1.17.17",
+    "@types/node": "^24.12.4",
+    "@omniterm/core": "workspace:*",
+    "tsup": "^8.3.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,166 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
+
+// Isolate settings before importing the router (the terminal lib captures
+// module globals and runs orphan recovery at load; SETTINGS_DIR keeps this off
+// the user's real settings). These tests exercise only the input-validation and
+// not-found paths, which return before any tmux/ttyd call — so they need no real
+// tmux server or ttyd binary. The create-or-adopt / status-semantics paths do
+// require both and are covered by buildNewSessionArgs unit tests plus manual
+// verification rather than a flaky env-dependent integration test.
+const settingsDir = mkdtempSync(path.join(tmpdir(), 'omniterm-sessions-route-'));
+process.env.SETTINGS_DIR = settingsDir;
+process.on('exit', () => rmSync(settingsDir, { recursive: true, force: true }));
+
+const { sessionsRouter, MAX_SESSION_NAME_LEN, MAX_INITIAL_COMMAND_LEN, bucketDiscoveredSessions } =
+  await import('./sessions.js');
+
+async function withServer<T>(fn: (base: string) => Promise<T>): Promise<T> {
+  const app = express();
+  app.use(express.json());
+  app.use(sessionsRouter);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', () => resolve()));
+  const { port } = server.address() as AddressInfo;
+  try {
+    return await fn(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+const createSession = (base: string, body: unknown) =>
+  fetch(`${base}/create-session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+test('POST /create-session requires cwd', async () => {
+  await withServer(async (base) => {
+    const res = await createSession(base, {});
+    assert.equal(res.status, 400);
+  });
+});
+
+test('POST /create-session rejects a name with tmux/URL-unsafe characters', async () => {
+  await withServer(async (base) => {
+    for (const name of ['bad.name', 'has space', 'a/b', 'a:b']) {
+      const res = await createSession(base, { cwd: '/tmp', name });
+      assert.equal(res.status, 400, `expected 400 for name ${JSON.stringify(name)}`);
+      const body = (await res.json()) as { error: string };
+      assert.match(body.error, /name must be/);
+    }
+  });
+});
+
+test('POST /create-session rejects an over-long name', async () => {
+  await withServer(async (base) => {
+    const res = await createSession(base, { cwd: '/tmp', name: 'a'.repeat(MAX_SESSION_NAME_LEN + 1) });
+    assert.equal(res.status, 400);
+  });
+});
+
+test('POST /create-session rejects an over-long initialCommand', async () => {
+  await withServer(async (base) => {
+    const res = await createSession(base, {
+      cwd: '/tmp',
+      initialCommand: 'x'.repeat(MAX_INITIAL_COMMAND_LEN + 1),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+const HOME = '/Users/tester';
+
+test('bucketDiscoveredSessions: a MANAGED session in a tracked non-git dir marks it active', () => {
+  // Regression: the "active sessions" filter dropped a non-git workspace whose
+  // only session was created through the app, because managed sessions were
+  // excluded from the discovered set and non-git dirs carry no session count.
+  const byDir = bucketDiscoveredSessions({
+    tmuxSessions: [{ name: 'mysession', cwd: '/work/scripts', created: '1' }],
+    managedNames: new Set(['mysession']), // app-managed
+    repoWorktreePaths: new Set(),
+    trackedDirs: ['/work/scripts'],
+    home: HOME,
+  });
+  assert.equal(byDir['/work/scripts'].length, 1, 'tracked non-git dir should read as active');
+});
+
+test('bucketDiscoveredSessions: an orphan session surfaces even in an untracked dir', () => {
+  const byDir = bucketDiscoveredSessions({
+    tmuxSessions: [{ name: 'stray', cwd: '/tmp/adhoc', created: '1' }],
+    managedNames: new Set(),
+    repoWorktreePaths: new Set(),
+    trackedDirs: [],
+    home: HOME,
+  });
+  assert.equal(byDir['/tmp/adhoc'].length, 1, 'orphan gets its own workspace entry');
+});
+
+test('bucketDiscoveredSessions: a worktree session never leaks into the OTHERS map', () => {
+  const byDir = bucketDiscoveredSessions({
+    tmuxSessions: [{ name: 'wt', cwd: '/repo/feature', created: '1' }],
+    managedNames: new Set(), // not managed, but lives in a worktree
+    repoWorktreePaths: new Set(['/repo/feature']),
+    trackedDirs: [],
+    home: HOME,
+  });
+  assert.deepEqual(Object.keys(byDir), [HOME], 'worktree path must not become an OTHERS key');
+});
+
+test('bucketDiscoveredSessions: a MANAGED session in an UNTRACKED dir is ignored', () => {
+  // Guards the `else if (byDir[s.cwd])` branch: a managed session only counts
+  // toward a pre-seeded dir, so one in a dir the user never tracked must not
+  // conjure a workspace entry.
+  const byDir = bucketDiscoveredSessions({
+    tmuxSessions: [{ name: 'app', cwd: '/some/untracked', created: '1' }],
+    managedNames: new Set(['app']),
+    repoWorktreePaths: new Set(),
+    trackedDirs: [],
+    home: HOME,
+  });
+  assert.deepEqual(Object.keys(byDir), [HOME], 'untracked dir must not become an entry');
+});
+
+test('bucketDiscoveredSessions: a MANAGED session at HOME counts toward home activity', () => {
+  // HOME is always seeded, so a managed session there should register.
+  const byDir = bucketDiscoveredSessions({
+    tmuxSessions: [{ name: 'homeapp', cwd: HOME, created: '1' }],
+    managedNames: new Set(['homeapp']),
+    repoWorktreePaths: new Set(),
+    trackedDirs: [],
+    home: HOME,
+  });
+  assert.equal(byDir[HOME].length, 1, 'managed session at HOME should count');
+});
+
+test('bucketDiscoveredSessions: a tracked dir with no sessions stays seeded but empty', () => {
+  const byDir = bucketDiscoveredSessions({
+    tmuxSessions: [],
+    managedNames: new Set(),
+    repoWorktreePaths: new Set(),
+    trackedDirs: ['/work/notes'],
+    home: HOME,
+  });
+  assert.deepEqual(byDir['/work/notes'], [], 'tracked dir present so it renders, but inactive');
+});
+
+test('GET /sessions/:id returns 404 for an unknown session', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/sessions/does-not-exist`);
+    assert.equal(res.status, 404);
+  });
+});
+
+test('DELETE /sessions/:id returns 404 for an unknown session', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/sessions/does-not-exist`, { method: 'DELETE' });
+    assert.equal(res.status, 404);
+  });
+});

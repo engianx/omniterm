@@ -1,0 +1,16 @@
+{
+  "smoke": [
+    {
+      "id": "richer-file-viewers",
+      "case": "tests/agent/file-viewers/richer-file-viewers.md",
+      "required": true,
+      "timeout_minutes": 20
+    },
+    {
+      "id": "mobile-terminal-input",
+      "case": "tests/agent/mobile-terminal-input/mobile-terminal-input.md",
+      "required": true,
+      "timeout_minutes": 20
+    }
+  ]
+}

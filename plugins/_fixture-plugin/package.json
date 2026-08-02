@@ -1,0 +1,12 @@
+{
+  "name": "@omniterm/fixture-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Dev/test-only fixture plugin: exercises the omniterm plugin loader, manifest, and HostContext. Not published.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  }
+}

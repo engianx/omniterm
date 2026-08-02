@@ -1,0 +1,408 @@
+.panel {
+  position: relative;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  padding: 8px 8px 8px 8px;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.title:hover {
+  color: var(--text);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-radius: 3px;
+}
+
+.iconBtn:hover {
+  color: var(--text);
+  background: var(--bg-tertiary);
+}
+
+/* Panels */
+.panel {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panelScroll {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 24px;
+  cursor: row-resize;
+  touch-action: none;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.divider:hover {
+  background: var(--bg);
+}
+
+.dividerLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Groups (repos or dirs) */
+.group {
+  margin-bottom: 2px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 4px;
+}
+
+.groupHeader:hover .groupActions {
+  opacity: 1;
+}
+
+.expandBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.expandBtn:hover {
+  color: var(--text);
+  background: var(--bg-tertiary);
+}
+
+.groupName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupActions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.actionBtn {
+  font-size: 14px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.actionBtn:hover {
+  color: var(--text);
+  background: var(--bg-tertiary);
+}
+
+/* Items (worktrees or sessions) */
+.itemList {
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  padding: 3px 12px 3px 44px;
+  cursor: pointer;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.item:hover {
+  background: var(--bg-tertiary);
+}
+
+.item:hover .deleteBtn {
+  opacity: 1;
+}
+
+.item.active {
+  background: var(--accent);
+  color: var(--text-bright);
+}
+
+.sessionDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success, #3fb950);
+  flex-shrink: 0;
+}
+
+.alertDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning, #d29922);
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.itemName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteBtn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.active .deleteBtn {
+  opacity: 0.6;
+}
+
+.renameInput {
+  flex: 1;
+  padding: 1px 4px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--link);
+  color: var(--text);
+  border-radius: 2px;
+  outline: none;
+}
+
+/* Directory items (flat list) */
+.dirItem {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.dirItem:hover {
+  background: var(--bg-tertiary);
+}
+
+.dirItem.active {
+  background: var(--accent);
+  color: var(--text-bright);
+}
+
+/* Empty states */
+.empty {
+  padding: 16px 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.emptySmall {
+  padding: 4px 12px 4px 44px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+  flex-shrink: 0;
+}
+
+.addMenu {
+  display: flex;
+  gap: 6px;
+}
+
+.addBtn {
+  flex: 1;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  text-align: center;
+}
+
+.addBtn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.errorMsg {
+  font-size: 11px;
+  color: var(--danger);
+  padding: 4px 0;
+  word-break: break-all;
+}
+
+/* Dialog (clone / browse) */
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialogInput {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 3px;
+  outline: none;
+  font-family: inherit;
+}
+
+.dialogInput:focus {
+  border-color: var(--link);
+}
+
+.dialogActions {
+  display: flex;
+  gap: 6px;
+}
+
+.primaryBtn {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 12px;
+  background: var(--accent);
+  color: var(--text-bright);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.secondaryBtn {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  background: none;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.browsePath {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browseList {
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+
+.browseItem {
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browseItem:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-bright);
+}

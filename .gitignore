@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build output
+dist/
+build/
+standalone/
+*.tsbuildinfo
+
+# Test output
+coverage/
+.vitest-cache/
+
+# Agent-test run output + inner-runner artifacts written into fixtures
+agent-test-reports/
+tests/agent/fixtures/**/*.yaml.spec.ts
+# Playwright inner-runner output dir (created at repo root on a debug run)
+test-results/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Logs
+*.log
+/logs/
+
+# Agent tooling (local only, not shared)
+.mcp.json
+.codex/
+.claude/
+AGENTS.md
+CLAUDE.md
+skills-lock.json

@@ -1,0 +1,123 @@
+/* Shared resize-handle primitive.
+ *
+ * Renders a thin (1px) visible divider with an enlarged invisible hit
+ * area for fingers/imprecise pointers. Optional dot-grip indicator
+ * appears on touch-primary devices for discoverability. */
+
+.handle {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 10;
+  touch-action: none;
+}
+
+/* In-flow vertical divider (drag horizontally to resize). */
+.handleX {
+  box-sizing: content-box;
+  width: 1px;
+  padding: 0 2px;
+  cursor: col-resize;
+  background: var(--border);
+  background-clip: content-box;
+  align-self: stretch;
+}
+
+/* In-flow horizontal divider (drag vertically to resize). */
+.handleY {
+  box-sizing: content-box;
+  height: 1px;
+  padding: 2px 0;
+  cursor: row-resize;
+  background: var(--border);
+  background-clip: content-box;
+}
+
+/* Edge overlay variants — no visible line, parent provides positioning.
+ * The container's existing border serves as the visual divider. */
+.handleEdge {
+  position: absolute;
+  background: transparent;
+  background-clip: border-box;
+  padding: 0;
+}
+
+.handleEdge.handleX {
+  width: 6px;
+  top: 0;
+  bottom: 0;
+}
+
+.handleEdge.handleY {
+  height: 6px;
+  left: 0;
+  right: 0;
+}
+
+/* Touch-primary devices: grow the hit area so a finger can land on it.
+ * 14px total for in-flow, 16px for edge overlays. Conservative —
+ * Apple HIG asks for 44pt, but a thin divider between content panes
+ * has different ergonomics than a button. */
+@media (hover: none) and (pointer: coarse) {
+  .handleX:not(.handleEdge) {
+    padding: 0 6.5px;
+  }
+  .handleY:not(.handleEdge) {
+    padding: 6.5px 0;
+  }
+  .handleEdge.handleX {
+    width: 16px;
+  }
+  .handleEdge.handleY {
+    height: 16px;
+  }
+}
+
+/* Dot-grip indicator. Hidden by default; shown on touch when enabled. */
+.handle.gripTouch::after,
+.handle.gripHover::after {
+  content: '';
+  position: absolute;
+  background: var(--text-muted, var(--border));
+  opacity: 0.5;
+  border-radius: 999px;
+  pointer-events: none;
+  display: none;
+}
+
+.handleX.gripTouch::after,
+.handleX.gripHover::after {
+  width: 4px;
+  height: 28px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.handleY.gripTouch::after,
+.handleY.gripHover::after {
+  height: 4px;
+  width: 28px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* grip="hover": fade in on hover (desktop), persistent on touch. */
+.handle.gripHover::after {
+  display: block;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.handle.gripHover:hover::after {
+  opacity: 0.5;
+}
+
+/* Touch-primary: always show grip when grip="touch" or "hover". */
+@media (hover: none) and (pointer: coarse) {
+  .handle.gripTouch::after,
+  .handle.gripHover::after {
+    display: block;
+    opacity: 0.5;
+  }
+}

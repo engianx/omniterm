@@ -1,0 +1,10 @@
+# Build outputs assembled by scripts/package.sh — generated, never committed
+dist/
+standalone/
+
+# Bin shims copied from @omniterm/core at build time (only bin/omniterm.js is source)
+bin/omniterm-browser.js
+bin/xdg-open
+
+# Tarballs from pnpm pack
+*.tgz
