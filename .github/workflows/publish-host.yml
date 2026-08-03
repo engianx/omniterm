@@ -303,16 +303,13 @@ jobs:
       # a red suite must still be recorded (as fail) rather than silently
       # dropped — an unobserved check and a failing check are different facts.
       #
-      # OPEN QUESTION on first use: node:test writes ABSOLUTE file paths into the
-      # JUnit report (verified locally — the path is absolute no matter which
-      # directory the runner is invoked from), while quality-map.yaml proofs use
-      # repo-relative paths. The observation schema does not say which form the
-      # join expects. This step deliberately matches monots' publish-cli.yml,
-      # the working reference on the same tool version, rather than inventing a
-      # normalization step that could break the join in the other direction. If
-      # the first `quality-tools analyze` reports every check unobserved, this is
-      # the cause: rewrite `path` to strip the $GITHUB_WORKSPACE prefix before
-      # merging.
+      # Paths are normalized to repo-relative before validation. node:test writes
+      # ABSOLUTE paths into JUnit (true regardless of the runner's working
+      # directory), but `path` + `test_case` together are the observation's
+      # IDENTITY — what a quality-map proof is joined on — and an identity has to
+      # be stable. An absolute path is `/home/runner/work/omniterm/omniterm/...`
+      # in CI and `/Users/<someone>/...` locally, so it would key the same test
+      # differently in every environment and join to nothing.
       - name: Build canonical observations
         if: always()
         continue-on-error: true
@@ -385,6 +382,31 @@ jobs:
           fi
           $QT observations merge "${manifests[@]}" \
             --output /tmp/qc-observations/host/quality-observations.json
+
+          # Absolute -> repo-relative. Idempotent: gate observations recorded with
+          # an already-relative path are left alone. Warns loudly if anything is
+          # still absolute afterwards, because those entries silently join to
+          # nothing rather than failing.
+          node -e '
+            const fs = require("fs");
+            const file = process.argv[1];
+            const root = (process.env.GITHUB_WORKSPACE || process.cwd()).replace(/\/+$/, "") + "/";
+            const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+            let rewritten = 0;
+            for (const o of doc.observations || []) {
+              if (typeof o.path === "string" && o.path.startsWith(root)) {
+                o.path = o.path.slice(root.length);
+                rewritten++;
+              }
+            }
+            const stillAbsolute = (doc.observations || []).filter((o) => o.path?.startsWith("/"));
+            fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+            console.log(`normalized ${rewritten} observation path(s) to repo-relative`);
+            if (stillAbsolute.length) {
+              console.log(`::warning::${stillAbsolute.length} observation path(s) are still absolute and will not join: ${stillAbsolute.slice(0, 3).map((o) => o.path).join(", ")}`);
+            }
+          ' /tmp/qc-observations/host/quality-observations.json
+
           $QT observations validate /tmp/qc-observations/host/quality-observations.json
 
       - name: Upload observations
