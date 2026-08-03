@@ -37,7 +37,7 @@ reconciliation logic are proven by unit tests + deterministic server smoke. The
 clean-cut invariant is proven structurally (no static imports) and behaviorally
 (build with the plugin removed). Browser-rendered client UX (iframe persistence,
 `[+]`/file-handler interaction) needs an agent/manual browser check — deferred to
-when the real debugger plugin (003) and a browser are available; a unit test
+when a real out-of-tree plugin and a browser are available; a unit test
 can't reach it.
 
 ## Test Cases
