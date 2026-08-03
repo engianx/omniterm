@@ -145,16 +145,16 @@ expectations:
         contexts: ["local"]
         notes: "HostContext reuses lib/allowedRoots (same allowlist as /api/fs + /api/preview) — review fix for the homedir divergence."
       - id: "confinepath-rejection-contract"
-        type: "external"
-        path: "EXTERNAL: an out-of-tree plugin's adapter-confinement test"
-        command: "not runnable in this repository"
+        type: "contract"
+        path: "packages/core/server/pluginConfinement.test.ts"
+        command: "pnpm --filter @omniterm/core test"
         depth: "DIRECT"
-        reliability: "UNVERIFIABLE_HERE"
-        contexts: []
-        notes: "A real plugin route calling host.confinePath rejects an out-of-root path with 403 — the over-the-wire rejection. This proof still runs, but in the plugin's own repository: the plugin moved out when the host was open-sourced, so this repo cannot execute it and MUST NOT count it as local evidence. Kept as a pointer, not as proof."
+        reliability: "STRONG"
+        contexts: ["local", "ci"]
+        notes: "Boots a real host with the in-repo fixture plugin and drives it over HTTP: an out-of-root path and a traversal escape from an allowed root are both refused 403 with no instance created; an in-root path is accepted and returned resolved; omitting the path is accepted. Proves the plugin ACTS on a null from confinePath rather than degrading to a fileless success — the unit-level null is covered separately in lib/paths.test.ts. Mutation-checked: removing the fixture's 403 fails 2 of the 4 cases."
     proof_gap:
-      summary: "REOPENED. The over-the-wire host.confinePath rejection was proven by an out-of-tree plugin's contract test, which left with the plugin. In this repo the check is now backed only by the in-repo fixture plugin (smoke depth), so the contract-level assertion is unproven here. Broader HostContext surface (repos, settings) over the wire remains smoke-only."
-      next_step: "Add an in-repo contract test — the fixture plugin can assert the 403 over the wire without depending on any external plugin — then restore this check to DIRECT/STRONG."
+      summary: "The over-the-wire host.confinePath rejection is proven in-repo, with no dependency on any external plugin. Broader HostContext surface (repos, settings) over the wire is still only smoke-tested via the fixture."
+      next_step: "Optionally add contract tests for the other HostContext services the fixture exercises (repos, settings)."
 
   - id: "terminal-initial-command"
     title: "A file handler can run a command in a terminal"

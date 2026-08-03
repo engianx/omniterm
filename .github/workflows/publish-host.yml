@@ -59,6 +59,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Typecheck (hard gate)
+        id: typecheck_gate
         run: pnpm -r typecheck
 
       # Without tmux the terminal-plugin integration tests self-skip, and the
@@ -68,7 +69,28 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
 
       - name: Tests (hard gate)
+        id: tests_gate
         run: pnpm -r test
+
+      # Re-run the same suites with a JUnit reporter so the canonical conversion
+      # below can carry per-test runtime proof into the quality maps. The gate
+      # above is what blocks the release; this only records. Emitting from a
+      # second run (rather than making the gate itself dual-reporter) keeps a
+      # reporter-plumbing failure from turning into a false release block.
+      - name: Emit JUnit (canonical observation input)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/qc-observations/host
+          ( cd packages/core && NODE_ENV=test pnpm exec tsx --test \
+              --test-reporter=spec --test-reporter-destination=stdout \
+              --test-reporter=junit --test-reporter-destination=/tmp/qc-observations/host/core.junit.xml \
+              '**/*.test.ts' --test-skip-pattern=node_modules ) || true
+          ( cd plugins/demo-agent && pnpm exec tsx --test \
+              --test-reporter=spec --test-reporter-destination=stdout \
+              --test-reporter=junit --test-reporter-destination=/tmp/qc-observations/host/demo-agent.junit.xml \
+              'src/**/*.test.ts' ) || true
 
       - name: Compute OLD (live npm) and NEW (patch+1) versions
         id: versions
@@ -115,6 +137,7 @@ jobs:
       # A missing/renamed secret would otherwise publish a silently
       # telemetry-dead release that still looks green.
       - name: Assert the telemetry key was baked into the bundle
+        id: telemetry_key_gate
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
         run: |
@@ -208,6 +231,7 @@ jobs:
           echo "No new filtered warnings."
 
       - name: Functional smoke (--version / --help)
+        id: functional_smoke_gate
         run: |
           set -euo pipefail
           cd /tmp/candidate-smoke
@@ -268,6 +292,108 @@ jobs:
           BUMP_SHA=$(git rev-parse HEAD)
           printf '::%s::%s\n' error "Published to npm but failed to push the bump commit to main after all retries. Recover with: git push origin ${BUMP_SHA}:main (or re-dispatch — it self-heals from the live npm version)."
           exit 1
+
+      # Canonical quality observations. Converts the JUnit above plus the
+      # hard-gate outcomes into the observation format the quality maps are
+      # joined against, so a check in quality-evidence/**/quality-map.yaml can be
+      # `observed` from a real run rather than merely declared.
+      #
+      # `if: always()` + `continue-on-error: true` on purpose: observations
+      # RECORD, they never gate. A failed conversion must not fail a release, and
+      # a red suite must still be recorded (as fail) rather than silently
+      # dropped — an unobserved check and a failing check are different facts.
+      #
+      # OPEN QUESTION on first use: node:test writes ABSOLUTE file paths into the
+      # JUnit report (verified locally — the path is absolute no matter which
+      # directory the runner is invoked from), while quality-map.yaml proofs use
+      # repo-relative paths. The observation schema does not say which form the
+      # join expects. This step deliberately matches monots' publish-cli.yml,
+      # the working reference on the same tool version, rather than inventing a
+      # normalization step that could break the join in the other direction. If
+      # the first `quality-tools analyze` reports every check unobserved, this is
+      # the cause: rewrite `path` to strip the $GITHUB_WORKSPACE prefix before
+      # merging.
+      - name: Build canonical observations
+        if: always()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/qc-observations/host/shards
+          QT="npx --yes @shiplightai/quality-tools@0.3.0"
+          manifests=()
+
+          convert_junit() {
+            local source="$1" output="$2"
+            if [ ! -s "$source" ]; then
+              printf '::%s::%s\n' warning "Observation input unavailable: $source"
+              return
+            fi
+            if ! $QT observations from-junit "$source" --output "$output"; then
+              printf '::%s::%s\n' warning "Observation input rejected: $source"
+              rm -f "$output"
+              return
+            fi
+            manifests+=("$output")
+          }
+
+          record_gate() {
+            local test_case="$1" outcome="$2" output="$3" status
+            case "$outcome" in
+              success)        status=pass ;;
+              failure)        status=fail ;;
+              cancelled)      status=error ;;
+              ""|skipped)     status=skipped ;;
+              *)              status=error ;;
+            esac
+            if ! $QT observations record \
+              --path .github/workflows/publish-host.yml \
+              --test-case "$test_case" \
+              --status "$status" \
+              --note "GitHub Actions step outcome: $outcome" \
+              --output "$output"; then
+              printf '::%s::%s\n' warning "Gate outcome rejected: $test_case"
+              rm -f "$output"
+              return
+            fi
+            manifests+=("$output")
+          }
+
+          convert_junit /tmp/qc-observations/host/core.junit.xml \
+                        /tmp/qc-observations/host/shards/core.json
+          convert_junit /tmp/qc-observations/host/demo-agent.junit.xml \
+                        /tmp/qc-observations/host/shards/demo-agent.json
+
+          record_gate "Typecheck (hard gate)" \
+            "${{ steps.typecheck_gate.outcome }}" \
+            /tmp/qc-observations/host/shards/typecheck-gate.json
+          record_gate "Tests (hard gate)" \
+            "${{ steps.tests_gate.outcome }}" \
+            /tmp/qc-observations/host/shards/tests-gate.json
+          record_gate "Assert the telemetry key was baked into the bundle" \
+            "${{ steps.telemetry_key_gate.outcome }}" \
+            /tmp/qc-observations/host/shards/telemetry-key-gate.json
+          record_gate "Tarball size delta (strict)" \
+            "${{ steps.size.outcome }}" \
+            /tmp/qc-observations/host/shards/tarball-size-gate.json
+          record_gate "Functional smoke (--version / --help)" \
+            "${{ steps.functional_smoke_gate.outcome }}" \
+            /tmp/qc-observations/host/shards/functional-smoke-gate.json
+
+          if [ ${#manifests[@]} -eq 0 ]; then
+            printf '::%s::%s\n' warning "No observation shard survived; nothing to merge"
+            exit 0
+          fi
+          $QT observations merge "${manifests[@]}" \
+            --output /tmp/qc-observations/host/quality-observations.json
+          $QT observations validate /tmp/qc-observations/host/quality-observations.json
+
+      - name: Upload observations
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-host-observations
+          path: /tmp/qc-observations/host/quality-observations.json
+          if-no-files-found: warn
 
       - name: Upload diagnostics
         if: always()

@@ -69,7 +69,7 @@ Confidence is MEDIUM (not HIGH) because the browser-rendered client behavior
   plugin platform. Retest path: implement + add a test.
 - **Browser-rendered client** — `[+]`/file-handler/persisted-iframe UX needs an
   agent/manual browser check with a real plugin (closes the 001 live gaps too once
-  the debugger plugin lands in 003).
+  a real out-of-tree plugin lands in 003).
 - **CI** — a `quality-observations` workflow now emits JUnit + clean-cut/build manifests on PR/push (pending first run); not yet a gating check.
 
 ## Runtime Review (2026-06-15)
@@ -83,9 +83,11 @@ result for this target:
   script row stays unobserved until a CI gate emits an observation for it.
 - **terminal-initial-command** → `unobserved`, correctly — the capability is not
   implemented (T009 deferred; tracked as issue #12), so there is nothing to prove.
-- **hostcontext-public-api** → `partial`. New `an out-of-tree plugin's adapter-confinement test`
-  asserts a plugin's `host.confinePath` rejects an out-of-root path with 403 (the over-the-wire
-  rejection the gap asked for; shared evidence with 003/path-confinement).
+- **hostcontext-public-api** → `partial`. A plugin's `host.confinePath` rejection is asserted
+  over the wire (the rejection the gap asked for).
+  *(Superseded: at the time this was proven by an out-of-tree plugin's confinement test. That
+  plugin now lives in its own repository, so the proof was re-established in-repo as
+  `packages/core/server/pluginConfinement.test.ts`, driving the fixture plugin over HTTP.)*
 - **plugin-loader** → `partial`, now deeply backed: `parsePluginSpecs` + `validatePluginModule`
   were extracted to `@omniterm/core` (throwing `PluginSpecError` instead of `process.exit`) and
   unit-tested in `packages/core/lib/pluginLoader.test.ts` (11 cases). Only the host's module

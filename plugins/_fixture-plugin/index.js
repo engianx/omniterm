@@ -28,7 +28,15 @@ export default function createFixturePlugin() {
 
   function create(openFile, host) {
     let file = null;
-    if (openFile && host) file = host.confinePath(openFile); // null if outside allowed roots
+    if (openFile && host) {
+      file = host.confinePath(openFile); // null if outside every allowed root
+      // Reject rather than silently degrade to a fileless instance: a path the
+      // host refused is a caller error, and answering 200 would let a traversal
+      // attempt look like success. This is the over-the-wire half of the
+      // confinement contract — `confinePath` returning null is only useful if
+      // the plugin acts on it.
+      if (file === null) return { error: 'path is outside the allowed workspace roots' };
+    }
     const id = `fx-${nextId++}`;
     const name = file ? file.split('/').pop() : 'Fixture';
     const inst = { id, name, status: 'running', file };
@@ -60,7 +68,12 @@ export default function createFixturePlugin() {
 
       router.post('/api/fixture/instances', (req, res) => {
         const openFile = typeof req.body?.openFile === 'string' ? req.body.openFile : undefined;
-        res.json(create(openFile, host));
+        const result = create(openFile, host);
+        if (result.error) {
+          res.status(403).json(result);
+          return;
+        }
+        res.json(result);
       });
 
       router.get('/api/fixture/instances', (_req, res) => {
