@@ -1,0 +1,312 @@
+# Canonical location: .quality/project-map.yaml
+#
+# Constructed by /quality start from accepted intent (docs/prd.md,
+# docs/feature-breakdown.md, specs/*/spec.md) — this repository is SPEC-DRIVEN,
+# so feature boundaries are read from accepted requirements rather than inferred
+# from code.
+#
+# HUMAN GATES — an agent proposed these and must not ratify them:
+#   gate 2  features[].status            all "candidate" until the owner assigns
+#                                        the accurate lifecycle status
+#   gate 3  features[].priority_provenance  all "agent" until the owner sets or
+#                                        confirms each priority
+# Both are held at the untrusted default on purpose. They are not an assessment
+# of the work; they record that no human has yet ratified this structure.
+project:
+  id: "omniterm"
+  name: "omniterm"
+  summary: >-
+    A generic, standalone, browser-based development host: persistent terminals,
+    a live browser-view panel, and workspace/file management in one screen,
+    extensible at runtime through a plugin API. The assessment boundary is the
+    published host (@omniterm/host), its bundled SDK (@omniterm/core), and the
+    published plugin contract (@omniterm/plugin-types). Plugins themselves are
+    separate projects in their own repositories.
+  # No TESTING.md in this repository; proof strategy is the baked-in default
+  # plus the constitution's Test And Evidence Discipline principle.
+  quality_policy_path: null
+  source_refs:
+    - path: "README.md"
+      label: "Project README"
+    - path: "docs/prd.md"
+      label: "Accepted project requirements"
+    - path: "docs/feature-breakdown.md"
+      label: "Feature breakdown"
+    - path: ".specify/memory/constitution.md"
+      label: "Project constitution (specification authority, clean plugin boundary)"
+
+intent_docs:
+  - id: "prd"
+    path: "docs/prd.md"
+    role: "accepted_requirements"
+    status: "current"
+  - id: "feature-breakdown"
+    path: "docs/feature-breakdown.md"
+    role: "feature_catalog"
+    status: "current"
+  - id: "constitution"
+    path: ".specify/memory/constitution.md"
+    role: "governing_principles"
+    status: "current"
+  - id: "client-bundle-policy"
+    path: "docs/client-bundle-policy.md"
+    role: "engineering_constraint"
+    status: "current"
+
+# No feature is in flight: every mapped feature is shipped. This stays null
+# until work starts on the next one.
+active_feature:
+  id: null
+  branch: null
+  spec_path: null
+  phase: null
+  updated_at: null
+
+features:
+  - id: "001-omniterm-core"
+    name: "omniterm core"
+    description: >-
+      Run persistent terminals in a browser that survive disconnects, watch a
+      browser a command drives, and manage workspace files — with zero plugins
+      configured.
+    status: "candidate"
+    priority: "P1"
+    priority_provenance: "agent"
+    source_type: "SOURCE"
+    dependencies: []
+    implements_prd_refs:
+      - path: "docs/prd.md"
+        anchor: "Functional Requirements"
+    artifacts:
+      spec_path: "specs/001-omniterm-core/spec.md"
+      plan_path: "specs/001-omniterm-core/plan.md"
+      tasks_path: "specs/001-omniterm-core/tasks.md"
+      checklist_paths: []
+      quality_map_path: ".quality/evidence/001-omniterm-core/quality-map.yaml"
+      test_report_path: ".quality/evidence/001-omniterm-core/test-report.md"
+    code_refs:
+      - path: "packages/core"
+        label: "@omniterm/core SDK"
+      - path: "apps/omniterm"
+        label: "@omniterm/host CLI"
+    evidence_refs:
+      - path: ".quality/evidence/001-omniterm-core/test-report.md"
+        label: "Recovered test report (historical run)"
+    open_questions: []
+    residual_risks:
+      - "The vendored-DevTools carve-out was dropped; the browser panel now uses the inspected browser's own DevTools frontend."
+
+  - id: "002-plugin-platform"
+    name: "plugin platform"
+    description: >-
+      Extend the host at runtime: load plugins by path or package name, render
+      their tab types and file handlers from manifest data with no client
+      rebuild, and keep plugins off host internals.
+    status: "candidate"
+    priority: "P1"
+    priority_provenance: "agent"
+    source_type: "SOURCE"
+    dependencies:
+      - "001-omniterm-core"
+    implements_prd_refs:
+      - path: "docs/prd.md"
+        anchor: "Functional Requirements"
+    artifacts:
+      spec_path: "specs/002-plugin-platform/spec.md"
+      plan_path: "specs/002-plugin-platform/plan.md"
+      tasks_path: "specs/002-plugin-platform/tasks.md"
+      checklist_paths: []
+      quality_map_path: ".quality/evidence/002-plugin-platform/quality-map.yaml"
+      test_report_path: ".quality/evidence/002-plugin-platform/test-report.md"
+    code_refs:
+      - path: "packages/plugin-types"
+        label: "@omniterm/plugin-types — the published, type-only plugin contract"
+      - path: "packages/core/server/routes/manifest.ts"
+        label: "GET /api/plugins manifest endpoint"
+      - path: "packages/core/lib/pluginLoader.ts"
+        label: "--plugin spec parsing + validation"
+      - path: "packages/core/clean-cut-boundary.test.ts"
+        label: "Clean-cut boundary enforcement"
+      - path: "plugins/_fixture-plugin"
+        label: "In-repo fixture plugin (dev/test only)"
+    evidence_refs:
+      - path: ".quality/evidence/002-plugin-platform/test-report.md"
+        label: "Recovered test report (historical run)"
+    open_questions: []
+    residual_risks:
+      - "Terminal run-in-terminal (FR-006 in the 002 spec) was deferred, not implemented."
+
+  - id: "004-telemetry"
+    name: "telemetry"
+    description: >-
+      Give maintainers pseudonymous usage and performance insight, with refusing
+      it a first-class, fail-closed choice and performance timings always
+      available locally.
+    status: "candidate"
+    priority: "P2"
+    priority_provenance: "agent"
+    source_type: "SOURCE"
+    dependencies:
+      - "001-omniterm-core"
+    implements_prd_refs:
+      - path: "docs/prd.md"
+        anchor: "FR-010"
+    artifacts:
+      spec_path: "specs/004-telemetry/spec.md"
+      plan_path: "specs/004-telemetry/plan.md"
+      tasks_path: "specs/004-telemetry/tasks.md"
+      checklist_paths:
+        - "specs/004-telemetry/checklists/requirements.md"
+      quality_map_path: ".quality/evidence/004-telemetry/quality-map.yaml"
+      test_report_path: ".quality/evidence/004-telemetry/test-report.md"
+    code_refs:
+      - path: "packages/core/lib/telemetry.ts"
+        label: "Telemetry facade"
+      - path: "packages/core/lib/telemetryConfig.ts"
+        label: "Pure fail-closed gating resolution"
+      - path: "packages/core/lib/installId.ts"
+        label: "Pseudonymous install id"
+      - path: "packages/core/lib/perfBuffer.ts"
+        label: "Bounded local perf ring buffer"
+    evidence_refs:
+      - path: ".quality/evidence/004-telemetry/test-report.md"
+        label: "Recovered test report (historical run)"
+    open_questions: []
+    residual_risks:
+      - "The destination key is injected at release-build time and absent from source, so telemetry is inert in any source or fork build. Live delivery was last confirmed from a dev machine, not from a published tarball."
+
+  - id: "005-richer-file-viewers"
+    name: "richer file viewers"
+    description: >-
+      Open non-text files in the file panel as themselves — images, PDFs, and
+      CSV/TSV — rather than rendering them as garbage text, without weighing
+      down first load.
+    status: "candidate"
+    priority: "P1"
+    priority_provenance: "agent"
+    source_type: "SOURCE"
+    dependencies:
+      - "001-omniterm-core"
+    implements_prd_refs:
+      - path: "docs/prd.md"
+        anchor: "FR-011"
+    artifacts:
+      spec_path: "specs/005-richer-file-viewers/spec.md"
+      plan_path: "specs/005-richer-file-viewers/plan.md"
+      tasks_path: "specs/005-richer-file-viewers/tasks.md"
+      checklist_paths:
+        - "specs/005-richer-file-viewers/checklists/requirements.md"
+      quality_map_path: ".quality/evidence/005-richer-file-viewers/quality-map.yaml"
+      test_report_path: ".quality/evidence/005-richer-file-viewers/test-report.md"
+    code_refs:
+      - path: "packages/core/lib/previewable.ts"
+        label: "Viewer dispatch + raw preview URL"
+      - path: "packages/core/app/components/DedicatedViewer.tsx"
+        label: "Lazy viewer dispatcher"
+      - path: "apps/omniterm/scripts/package.sh"
+        label: "Entry-chunk size gate"
+    evidence_refs:
+      - path: ".quality/evidence/005-richer-file-viewers/test-report.md"
+        label: "Recovered test report (historical run)"
+    open_questions: []
+    residual_risks:
+      - ".avif has no fixture; oversized/password-protected PDF failure visuals were code-reviewed rather than exercised."
+
+  - id: "006-mobile-terminal-input"
+    name: "mobile terminal input"
+    description: >-
+      Make the terminal usable from a phone or tablet: supply the meta and
+      control keys a soft keyboard lacks, and deliver dictated or typed text
+      exactly once.
+    status: "candidate"
+    priority: "P1"
+    priority_provenance: "agent"
+    source_type: "SOURCE"
+    dependencies:
+      - "001-omniterm-core"
+    implements_prd_refs:
+      - path: "docs/prd.md"
+        anchor: "FR-012"
+    artifacts:
+      spec_path: "specs/006-mobile-terminal-input/spec.md"
+      plan_path: "specs/006-mobile-terminal-input/plan.md"
+      tasks_path: "specs/006-mobile-terminal-input/tasks.md"
+      checklist_paths: []
+      quality_map_path: ".quality/evidence/006-mobile-terminal-input/quality-map.yaml"
+      test_report_path: ".quality/evidence/006-mobile-terminal-input/test-report.md"
+    code_refs:
+      - path: "packages/core/plugins/terminal/lib/terminalInput.ts"
+        label: "Pure byte logic + two-path injector"
+      - path: "packages/core/plugins/terminal/components/MobileInputChrome.tsx"
+        label: "Mobile key bar + compose field"
+    evidence_refs:
+      - path: ".quality/evidence/006-mobile-terminal-input/test-report.md"
+        label: "Recovered test report (historical run)"
+      - path: ".quality/evidence/006-mobile-terminal-input/review.md"
+        label: "Recovered code review"
+    open_questions: []
+    residual_risks:
+      - "iOS device behaviors (focus retention, visualViewport positioning, live dictation) cannot be verified from this environment; automated evidence covers byte-correctness via headless ttyd + Chromium."
+
+cross_feature_concerns:
+  - id: "clean-plugin-boundary"
+    title: "Any plugin must be removable without breaking the host"
+    status: "open"
+    feature_ids:
+      - "001-omniterm-core"
+      - "002-plugin-platform"
+    source_refs:
+      - path: ".specify/memory/constitution.md"
+        label: "Constitution — Principle III (NON-NEGOTIABLE)"
+      - path: "docs/prd.md"
+        label: "FR-008 / SC-003"
+    notes: >-
+      No plugin may be statically imported by host or core, and plugins depend on
+      the host only through the published type-only @omniterm/plugin-types.
+      Enforced by packages/core/clean-cut-boundary.test.ts, which matches by
+      shape so a plugin nobody has written yet is still covered.
+
+  - id: "generic-host-no-product-deps"
+    title: "Host and core carry no product-specific dependencies"
+    status: "open"
+    feature_ids:
+      - "001-omniterm-core"
+    source_refs:
+      - path: ".specify/memory/constitution.md"
+        label: "Constitution — Principle II"
+      - path: "docs/prd.md"
+        label: "NFR-002"
+    notes: >-
+      The one historical carve-out (a vendored Chrome DevTools frontend) was
+      dropped rather than re-vendored, removing roughly 120 MB from every
+      install. The principle now holds with no exceptions.
+
+  - id: "no-secrets-in-source"
+    title: "Release-only configuration is injected at build time, never committed"
+    status: "open"
+    feature_ids:
+      - "004-telemetry"
+    source_refs:
+      - path: ".specify/memory/constitution.md"
+        label: "Constitution — Engineering Constraints"
+    notes: >-
+      The analytics key is injected by the release workflow, so a source or fork
+      build is inert. The workflow fails the release if the key did not land in
+      the bundle, so a misconfigured secret cannot ship a silently telemetry-dead
+      release that still looks green.
+
+discovery:
+  mode: "spec_driven"
+  source_types:
+    - "SOURCE"
+    - "IMPLEMENTATION"
+    - "INFERRED"
+    - "LEGACY"
+    - "DEPRECATED"
+  orphan_code_refs: []
+  specs_without_implementation: []
+  implementation_without_specs: []
+  tests_without_specs: []
+  evidence_gaps:
+    - "Feature 003 (first out-of-tree plugin) is specified and proven in the plugin's own repository; it is intentionally absent from this project's graph."
+  unresolved_drift: []

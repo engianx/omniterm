@@ -1,3 +1,10 @@
+# Gate 1 (origin): how this map's check list AND its priorities were produced.
+# agent_generated = an agent authored these against the accepted spec. NOT a
+# claim that a human reviewed them — that is gate 4 below.
+structure_provenance: "agent_generated"
+# Gate 4 (human review): HUMAN-GATED. An agent may propose the list but must
+# never set this. Left false until the owner approves the whole check list.
+checks_reviewed: false
 target:
   id: "005-richer-file-viewers"
   name: "richer file viewers (image, PDF, CSV/TSV)"
