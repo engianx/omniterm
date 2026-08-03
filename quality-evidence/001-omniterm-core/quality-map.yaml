@@ -1,0 +1,263 @@
+target:
+  id: "001-omniterm-core"
+  name: "omniterm core"
+  scope: "feature"
+  aliases: []
+  source_refs:
+    - path: "specs/001-omniterm-core/spec.md"
+      label: "Feature spec"
+    - path: "docs/prd.md"
+      label: "Product requirements"
+
+expectations:
+  - id: "host-boots-standalone"
+    title: "Host boots standalone with zero plugins and serves the UI"
+    description: "Running omniterm with no plugins configured starts the server and serves the terminal + browser-view + workspace SPA (SC-001, FR-008)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-008 / SC-001"
+    category: "ops"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "If the host does not boot/serve, the product is unusable; this is the base release gate."
+    evidence:
+      - id: "boot-smoke-standalone"
+        type: "smoke"
+        path: "apps/omniterm/standalone/server/server.js"
+        command: "PORT=17799 node standalone/server/server.js & curl --retry 15 --retry-connrefused http://127.0.0.1:17799/"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Boots the built standalone bundle and fetches the SPA index."
+      - id: "startserver-serves-index"
+        type: "integration"
+        path: "packages/core/server/startServer.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Serves the client index for deep SPA paths; ttyd HTTP/WS proxy readiness."
+    proof_gap:
+      summary: "Boot + SPA-serve are proven, but interactive terminal/browser-view in a real browser are not yet exercised by an auditable agent/manual run."
+      next_step: "Add a one-shot agent/manual browser check: open a terminal, run a command, confirm output renders."
+
+  - id: "terminal-session-persistence"
+    title: "Terminal sessions persist across client reconnect"
+    description: "Persistent tmux+ttyd sessions survive a browser reload and retain scrollback (SC-002, FR-001)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-001 / SC-002"
+    category: "other"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "Persistent terminals are the host's core value; losing sessions on reconnect breaks the primary workflow."
+    evidence:
+      - id: "ttyd-session-units"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/ttydReadiness.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "ttyd readiness + proxy lifecycle; session pruning covered by startServer/worktreeSessionErrors suites."
+      - id: "warm-workspace-units"
+        type: "unit"
+        path: "packages/core/plugins/terminal/warmWorkspaces.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+    proof_gap:
+      summary: "Session/ttyd lifecycle is unit-proven, but the end-to-end 'survives a real browser reload with scrollback' behavior is not directly exercised."
+      next_step: "Agent/manual: start a long process in a terminal, reload the tab, confirm session + scrollback intact."
+
+  - id: "browser-view-registry"
+    title: "Browsers register to a tab and render in the browser-view panel"
+    description: "A child process POSTs a CDP endpoint to OMNITERM_BROWSER_REGISTRY_URL; the panel shows it tab-scoped and drops it when the process exits (SC-003, FR-002)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-002 / SC-003"
+    category: "other"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "The browser live-view panel is the host's second differentiator; broken registration/eviction silently drops the feature."
+    evidence:
+      - id: "tabregistry-units"
+        type: "unit"
+        path: "packages/core/browserRegistry/tabRegistry.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Registration, cdpUrl dedupe, removal, pid-liveness sweep, CDP proxy URL derivation."
+    proof_gap:
+      summary: "Registry logic is directly unit-proven, but the live chain (omniterm-browser shim → OMNITERM_BROWSER_REGISTRY_URL → SSE → panel render → CDP proxy) is not exercised end-to-end. Tracked as task T016."
+      next_step: "Agent/manual: in a terminal, launch a CDP browser via the shim, confirm it appears in the panel and DevTools loads; kill it, confirm eviction."
+
+  - id: "workspace-path-confinement"
+    title: "File access is confined to tracked workspace roots"
+    description: "File-access operations reject paths outside tracked repos/dirs/worktrees (SC-004, FR-006)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-006 / SC-004"
+    category: "security"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "Path-confinement is a security boundary; a regression allows reading files outside the user's workspace."
+    evidence:
+      - id: "paths-confine-units"
+        type: "unit"
+        path: "packages/core/lib/paths.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "confinePath + bin-dir package resolution (now keyed on @omniterm/core)."
+    proof_gap:
+      summary: "Confinement logic is directly unit-proven, but the HTTP fs route rejecting an out-of-root read is not exercised over the wire."
+      next_step: "Contract/integration test or agent check: request a file read outside tracked roots via the fs route, expect rejection."
+
+  - id: "workspace-repo-management"
+    title: "Workspace tracks repos/dirs/worktrees and exposes them over HTTP"
+    description: "Repos/dirs can be added/listed/removed and worktrees listed; added paths surface in the file panel (SC-004, FR-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-005 / SC-004"
+    category: "api"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "Workspace management makes the host usable; failures degrade UX but are not a security/availability gate."
+    evidence:
+      - id: "repos-units"
+        type: "unit"
+        path: "packages/core/lib/repos.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+      - id: "workspace-selection-units"
+        type: "unit"
+        path: "packages/core/app/workspaceSelection.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+    proof_gap:
+      summary: "Repo/worktree logic is unit-proven; the live POST /repos round-trip and file-panel render are not exercised. Tracked as task T017."
+      next_step: "Agent/manual: POST /repos a local path, confirm it lists via the repos API and appears in the file panel."
+
+  - id: "ported-suites-regression-floor"
+    title: "All ported unit suites pass in the new repo"
+    description: "The full set of suites carried over from shipyard passes unchanged, proving the port preserved behavior (SC-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "SC-005"
+    category: "other"
+    priority: "P1"
+    risk:
+      weight: 3
+      rationale: "The ported suites are the regression floor that the move did not silently break logic."
+    evidence:
+      - id: "core-test-suite"
+        type: "unit"
+        path: "packages/core"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "paths, repos, worktrees, languages, startServer, tabRegistry, workspaceSelection, osc52, silenceMonitor, ttyd, ttydReadiness, warmWorkspaces, worktreeSessionErrors."
+    proof_gap:
+      summary: "No CI wiring yet — the suite runs locally only."
+      next_step: "Wire a CI workflow that runs typecheck + test on PRs once the repo has CI."
+
+  - id: "debrand-registry-consistency"
+    title: "Registry env var + shim de-brand is consistent end to end"
+    description: "OMNITERM_BROWSER_REGISTRY_URL is set on every terminal and read by the omniterm-browser shim/registry; no legacy vendor-prefixed identifiers identifier remains in shipped code."
+    source_type: "IMPLEMENTATION"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-002 / Assumptions (rename)"
+    category: "other"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "A half-applied rename silently breaks browser registration (already caught one such bug in the xdg-open shim)."
+    evidence:
+      - id: "debrand-grep-audit"
+        type: "static"
+        path: "packages/core"
+        command: "grep -rniE 'vendor-prefixed identifiers' packages/core apps/omniterm  (no exclusions — the vendored-DevTools carve-out was dropped)"
+        depth: "STATIC"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Producer (buildTabEnv) / consumer (omniterm-browser.js, tabRegistry) pairing verified; xdg-open shim fixed."
+    proof_gap:
+      summary: "a downstream consumer CLI still reads the legacy the legacy vendor-prefixed registry variable — cross-repo, intentionally deferred to the integration phase, so browser-driving-command-in-terminal registration is not yet end-to-end on the new name."
+      next_step: "Update + release the downstream consumer to read OMNITERM_BROWSER_REGISTRY_URL, then live-verify the shim→panel chain (also closes browser-view-registry gap)."
+
+  - id: "build-standalone-pipeline"
+    title: "Build produces a bootable standalone tarball"
+    description: "core vite client + tsc server, host tsup bundle, and package.sh assemble a standalone/ that boots (publish path)."
+    source_type: "IMPLEMENTATION"
+    source_refs:
+      - path: "apps/omniterm/scripts/package.sh"
+        anchor: "build pipeline"
+    category: "ops"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "A broken build/package pipeline blocks publishing @omniterm/host and the downstream testbox consumption."
+    evidence:
+      - id: "host-build"
+        type: "script"
+        path: "apps/omniterm/scripts/package.sh"
+        command: "pnpm --filter @omniterm/host build"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "vite client (86 modules) + tsc + tsup (dist/server.js) + standalone assembly + bin shim staging."
+      - id: "ci-build-artifacts-smoke"
+        type: "smoke"
+        path: "UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo)"
+        test_case: "standalone-build-produces-bootable-artifacts"
+        command: "pnpm --filter @omniterm/host build && assert standalone/ + bin shims present"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["ci"]
+        notes: "The quality-observations workflow builds the host and asserts the documented standalone artifacts (server/server.js, client, public, bin shims) exist, emitting a manifest observation. Joins under the ci-observations evaluation set."
+    proof_gap:
+      summary: "No dry-run npm publish / size-delta evidence yet; the AGENTS.md release-identity (npm account + version baseline) predates the rename and is unconfirmed for @omniterm/host."
+      next_step: "At publish time, run the AGENTS.md evidence pass against @omniterm/host and confirm the publish identity with the user."
+
+  - id: "settings-persistence"
+    title: "Host/UI settings persist across restarts"
+    description: "Settings (e.g. default shell) are saved and reloaded (FR-007)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/001-omniterm-core/spec.md"
+        anchor: "FR-007"
+    category: "other"
+    priority: "P3"
+    risk:
+      weight: 2
+      rationale: "Settings loss is a minor UX regression, not a security/availability issue."
+    evidence:
+      - id: "settings-roundtrip-unit"
+        type: "unit"
+        path: "packages/core/lib/settings.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Round-trips saveSettings/loadSettings against a temp SETTINGS_DIR; asserts per-path deep-merge of terminalTabs and the legacy tabLayouts→terminalTabs migration (including the no-clobber guard)."

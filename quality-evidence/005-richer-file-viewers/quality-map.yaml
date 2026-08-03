@@ -1,0 +1,220 @@
+target:
+  id: "005-richer-file-viewers"
+  name: "richer file viewers (image, PDF, CSV/TSV)"
+  scope: "feature"
+  aliases: []
+  source_refs:
+    - path: "specs/005-richer-file-viewers/spec.md"
+      label: "Feature spec"
+
+expectations:
+  - id: "lazy-load-entry-gate-green"
+    title: "Viewer code (incl. pdf.js + its worker) is lazy and stays out of the eager entry chunk"
+    description: "Every viewer loads on demand; the eager entry chunk stays within the 750 KB gate and contains no pdf.js / table-virtualizer code (FR-012, SC-004)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-012 / SC-004"
+    category: "performance"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "The whole point of the lazy design; a static import would fold ~577 KB of pdf.js into first load and break the gate that protects startup weight."
+    evidence:
+      - id: "entry-chunk-size-gate"
+        type: "build"
+        path: "apps/omniterm/scripts/package.sh"
+        command: "pnpm --filter @omniterm/host build"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Build printed 'Eager client bundle: 650452 bytes (budget 768000)' — passes. Separate chunks emitted: ImageViewer 4.8 KB, CsvViewer 28 KB, PdfViewer 577 KB + 277 KB CSS, pdf.worker.min 1.23 MB. grep of the entry index-*.js for pdfjs/GlobalWorkerOptions/react-virtual/useVirtualizer = 0 matches."
+    proof_gap:
+      summary: "None material. Gate is enforced in CI on every host build. Post-merge follow-up externalized pdf.js entirely (served from node_modules at /pdfjs, runtime-loaded, not bundled), so the tarball stays ~1.3MB and the bundle-bloat guards stay green without a publish-gate size exception — see apps/omniterm/AGENTS.md 'Client Bundle Policy'."
+      next_step: "n/a"
+
+  - id: "confined-raw-delivery"
+    title: "Viewers fetch bytes only through the path-confined raw route with correct content types"
+    description: "No new file route; all viewers read /api/preview/raw (confined to allowedRoots, 25 MB cap) and binary responses carry a correct Content-Type (FR-003, FR-016)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-003 / FR-016"
+    category: "security"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "Opening arbitrary files; a confinement regression or a new unconfined route would be a path-traversal/file-disclosure risk."
+    evidence:
+      - id: "rawurl-encoding-unit"
+        type: "unit"
+        path: "packages/core/lib/previewable.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "rawPreviewUrl: per-segment encoding, slash preservation, leading-slash trim, '#'/'?' escaped so a filename can't terminate the path."
+      - id: "raw-route-content-type-smoke"
+        type: "manual"
+        path: "specs/005-richer-file-viewers/quickstart.md"
+        command: "curl -D- /api/preview/raw/<path> for png/csv/pdf"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Live host smoke: png→image/png, csv→text/csv; charset=utf-8, pdf→application/pdf, all 200; a /tmp path (outside roots) returned 403. Route itself is unchanged by this feature (existing confinement test in server suite still passes)."
+    proof_gap:
+      summary: "Content-type for .avif not directly exercised (no avif fixture); relies on Express MIME + <img> sniffing."
+      next_step: "Add an .avif to the manual fixtures, or a route unit test asserting image/avif."
+
+  - id: "svg-no-script-execution"
+    title: "SVGs render as inert images (no markup injection / script execution)"
+    description: "Images, including SVG, render via <img src=blob>, never by injecting markup, so an SVG's embedded scripts cannot execute against the app origin (FR-006)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-006"
+    category: "security"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "Inlining untrusted SVG into the app origin is a classic stored-XSS vector; the <img>/blob path is the mitigation."
+    evidence:
+      - id: "imageviewer-img-blob-impl"
+        type: "code-review"
+        path: "packages/core/app/components/ImageViewer.tsx"
+        command: "read"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "ImageViewer only ever sets <img src> from URL.createObjectURL(blob); no dangerouslySetInnerHTML, no inline <svg>. An <img>-loaded SVG does not run scripts by spec."
+    proof_gap:
+      summary: "No automated test asserts a script-bearing SVG stays inert (behavioral/browser)."
+      next_step: "Browser check (quickstart #4) with an SVG containing an onload script; confirm no execution."
+
+  - id: "dispatch-no-regression"
+    title: "Extension dispatch is a single source of truth and never regresses existing file types"
+    description: "detectViewerKind drives both the open action and the renderer; it never overlaps detectPreviewKind; non-viewer files keep text/preview/binary behavior (FR-001, FR-002, FR-013, FR-015, SC-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-001 / FR-002 / FR-013 / SC-005"
+    category: "correctness"
+    priority: "P1"
+    risk:
+      weight: 3
+      rationale: "A mis-dispatch could hijack a previewable/text file or break opening of existing types."
+    evidence:
+      - id: "dispatch-unit"
+        type: "unit"
+        path: "packages/core/lib/previewable.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "detectViewerKind maps each image/pdf/csv extension (case-insensitive), returns null for ts/md/html/zip/etc., and never both-claims an extension with detectPreviewKind."
+      - id: "regression-typecheck-tests"
+        type: "build"
+        path: "packages/core"
+        command: "pnpm -r typecheck && pnpm -r test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Full repo: 136 tests pass (core 127 + plugins 9), typecheck clean after the FilePanel/fs refactor."
+    proof_gap:
+      summary: "FilePanel open/hydrate wiring has no component-level test (no RTL harness in repo)."
+      next_step: "Manual quickstart #16 (open a .ts/.md/binary → unchanged); optional future component test."
+
+  - id: "csv-parse-and-scale"
+    title: "CSV/TSV parses correctly and stays responsive at scale, read-only"
+    description: "Delimiter auto-detected; RFC-4180 quoting handled; ragged rows safe; large files virtualized so 100k rows stay responsive; read-only v1 (FR-009, FR-010, SC-003)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-009 / FR-010 / SC-003"
+    category: "correctness"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "Parsing bugs corrupt the table; non-virtualized rendering freezes the UI on big files."
+    evidence:
+      - id: "csv-parse-unit"
+        type: "unit"
+        path: "packages/core/app/components/csv-parse.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Delimiter detection (csv/tsv/semicolon/default), quoted delimiters + escaped quotes + embedded newlines, CRLF, ragged maxColumns, empty input."
+      - id: "virtualizer-impl"
+        type: "code-review"
+        path: "packages/core/app/components/CsvViewer.tsx"
+        command: "read"
+        depth: "INDIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Body rows rendered through @tanstack/react-virtual (windowed); only the visible slice is in the DOM. Read-only (no input affordance)."
+    proof_gap:
+      summary: "100k-row smooth-scroll (SC-003) not measured under automation."
+      next_step: "Browser pass (quickstart #13) on the generated 100k-row fixture."
+
+  - id: "pdf-render-text-find"
+    title: "PDFs render with navigable pages, selectable/copyable text, and find"
+    description: "pdf.js viewer renders pages, supports zoom/fit-width, exposes a text layer for select+copy, and an in-document find (FR-007, FR-008, SC-001, SC-002)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-007 / FR-008 / SC-002"
+    category: "correctness"
+    priority: "P1"
+    risk:
+      weight: 3
+      rationale: "PDFs are unusable today; the viewer must actually render + allow text select/find to deliver the core fix."
+    evidence:
+      - id: "pdf-viewer-impl"
+        type: "code-review"
+        path: "packages/core/app/components/PdfViewer.tsx"
+        command: "read"
+        depth: "INDIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Uses pdf.js PDFViewer + EventBus + PDFLinkService + PDFFindController with textLayerMode:1 (text layer on) and a find bar; getDocument({url}) streams from the raw route; full teardown on unmount. Worker wired via ?url, confirmed as a separate served asset."
+    proof_gap:
+      summary: "Render/select-copy/find (SC-001, SC-002) are browser behaviors not asserted by a headless test."
+      next_step: "Browser pass (quickstart #6–#10): multi-page render, select+copy match, find highlight/step, password/corrupt → message."
+
+  - id: "image-zoom-and-footer"
+    title: "Image viewer fits, zooms/pans, and shows dimensions + size"
+    description: "Fit-to-pane, zoom in/out/reset, ctrl+wheel pinch, drag-pan when zoomed, footer with name/dimensions/size (FR-004, FR-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-004 / FR-005"
+    category: "correctness"
+    priority: "P2"
+    risk:
+      weight: 2
+      rationale: "UX quality of the most common non-text file; bounded blast radius (display only)."
+    evidence:
+      - id: "image-zoom-unit"
+        type: "unit"
+        path: "packages/core/app/components/image-viewer-zoom.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "clampZoom bounds, fitSize contain + no-upscale + no-measurement no-op, zoomedSize = fit × clamped zoom."
+    proof_gap:
+      summary: "Pinch/pan and footer values are DOM behaviors validated manually."
+      next_step: "Browser pass (quickstart #1–#3)."
+
+failure_handling:
+  - id: "viewer-load-failures"
+    title: "Each viewer shows a clear, non-crashing message on failure"
+    source_refs:
+      - path: "specs/005-richer-file-viewers/spec.md"
+        anchor: "FR-011 / SC-006"
+    notes: "Image/CSV map 413→'too large' and other errors→'Failed to load'; PDF maps PasswordException→'password-protected', other→'Failed to load'. Verified by code review; browser confirmation of oversized/password/corrupt pending (quickstart #5, #10)."
+
+summary:
+  confidence: "HIGH"
+  rationale: "All pure logic (dispatch, CSV parse, image-zoom) is unit-tested STRONG; the lazy-load/entry-gate invariant — the feature's headline NFR — is proven DIRECT by the build gate + chunk analysis; the server delivery contract is confirmed by a live smoke; and all three viewer UIs are confirmed in a live recorded browser session (image render+zoom, SVG-as-image, .ico, PDF render+find, CSV/TSV table + quoting + delimiter + BOM, 100k-row virtualized scroll) — 11/11 checks, 0 console errors. That browser pass is now a repeatable coding-agent test (tests/agent/file-viewers/richer-file-viewers.md, smoke suite) so re-verification is runnable, not manual. Remaining untested: .avif (no fixture) and oversized/password failure visuals (code-reviewed). Browser report: ~/.omniterm/reports/005-richer-file-viewers-verify.html."

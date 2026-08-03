@@ -1,0 +1,296 @@
+target:
+  id: "004-telemetry"
+  name: "built-in telemetry (usage + performance)"
+  scope: "feature"
+  aliases: []
+  source_refs:
+    - path: "specs/004-telemetry/spec.md"
+      label: "Feature spec"
+
+expectations:
+  - id: "fail-closed-gating"
+    title: "Telemetry is fail-closed: any opt-out signal or missing key sends zero outbound"
+    description: "Telemetry is opt-out but disabled whenever DO_NOT_TRACK is truthy, OMNITERM_TELEMETRY is an off value, OMNITERM_TELEMETRY_DISABLED is set, the persisted opt-out is set, CI/NODE_ENV=test is detected, or no PostHog key is configured. When disabled the PostHog client is never constructed, so there are zero outbound calls (FR-006, FR-012, SC-002)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-006 / FR-012 / SC-002"
+    category: "security"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "Telemetry was deliberately stripped during porting to avoid outbound calls; re-introducing it is only acceptable if every off-switch is honored. A gating bug = unwanted phone-home, the core trust failure."
+    evidence:
+      - id: "gating-truth-table-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetryConfig.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "resolveTelemetryConfig: each opt-out signal (DO_NOT_TRACK, OMNITERM_TELEMETRY=0/off, OMNITERM_TELEMETRY_DISABLED, CI, NODE_ENV=test, persisted opt-out) and the no-key case all yield enabled=false; happy path (key + clean env) yields enabled=true; DO_NOT_TRACK=0 is not an opt-out."
+      - id: "disabled-no-client-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetry.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "With the default empty key, initTelemetry() leaves isTelemetryEnabled()=false (client never constructed) and does not throw."
+    proof_gap:
+      summary: "Zero-outbound is proven at the resolution/construction layer (no client when disabled), not via a live network-capture integration test against a real PostHog endpoint."
+      next_step: "When the key is provisioned, add a one-shot smoke that runs with DO_NOT_TRACK=1 under a network sniffer and asserts no requests to the PostHog host."
+
+  - id: "anonymous-no-pii"
+    title: "Events carry only an anonymous id and non-identifying context"
+    description: "The only correlation key is a random UUID persisted locally. Event payloads contain no user-identifying data, hostnames, file paths, repo names, or contents — only the anon id and a small allowlisted context (app_version, os platform, node_version) plus coarse event fields (FR-003, SC-004)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-003 / SC-004"
+    category: "security"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "Leaking any PII/path/repo/hostname into an outbound event would breach the privacy promise made to users of a locally installed dev tool."
+    evidence:
+      - id: "buildprops-allowlist-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetry.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "buildProps() keys are exactly {app_version, os, node_version} + the explicit event extra; asserts none of hostname/username/home/cwd/path/ip appear; os is a coarse platform string."
+      - id: "anon-id-unit"
+        type: "unit"
+        path: "packages/core/lib/installId.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "getOrCreateInstallId() persists a random UUID (no machine/user linkage) and is idempotent; opt-out/notice flags preserve the id."
+      - id: "callsite-payloads-static"
+        type: "static"
+        path: "packages/core"
+        command: "review of the six track* call sites"
+        depth: "STATIC"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Call sites pass only counts, a language string, and numeric timings — no paths/names. Confirmed by reading sessions.ts/fs.ts/startServer.ts."
+    proof_gap:
+      summary: "PII-absence is enforced on the context builder + reviewed at call sites, not by a runtime interceptor that scans every outgoing payload."
+      next_step: "Optional: a capture wrapper that asserts (in dev) no value matches path/home patterns."
+
+  - id: "local-perf-independent"
+    title: "Local performance metrics work regardless of opt-out"
+    description: "Session timings are recorded into a bounded ring buffer and surfaced via GET /api/metrics/perf even when phone-home telemetry is disabled (FR-004, SC-006, US3)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-004 / SC-006"
+    category: "other"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "If local recording were coupled to phone-home, opted-out operators would lose self-diagnosis and the endpoint would always be empty."
+    evidence:
+      - id: "ring-buffer-unit"
+        type: "unit"
+        path: "packages/core/lib/perfBuffer.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Bounded to 100 (oldest evicted); getRecent returns a defensive copy."
+      - id: "perf-while-disabled-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetry.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "With telemetry disabled, trackSessionCreated still populates getRecentPerfMetrics()."
+      - id: "perf-endpoint-static"
+        type: "static"
+        path: "packages/core/server/startServer.ts"
+        command: "grep /api/metrics/perf"
+        depth: "STATIC"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "GET /api/metrics/perf returns getRecentPerfMetrics() (unchanged endpoint, now backed by the real ring buffer)."
+    proof_gap:
+      summary: "The HTTP endpoint is asserted statically, not via a live request test."
+      next_step: "Optional: a supertest-style request to /api/metrics/perf asserting the recorded shape."
+
+  - id: "events-and-signatures-intact"
+    title: "All six instrumented events fire and no call site changed"
+    description: "server_started, session_created (+timings), session_adopted (+timings), session_closed, file_opened (language), cleanup (count) are captured when enabled; the exported function names/signatures are unchanged so the existing call sites compile and behave identically (FR-001, FR-002)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-001 / FR-002"
+    category: "other"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "A signature change would break the terminal/fs/server call sites at build time or silently drop events."
+    evidence:
+      - id: "typecheck-callsites"
+        type: "static"
+        path: "packages/core"
+        command: "pnpm -r typecheck"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "All call sites (sessions.ts trackClosed alias, fs.ts trackFileOpened, startServer trackServerStarted/init/shutdown/getRecentPerfMetrics) compile unchanged against the new module."
+    proof_gap:
+      summary: "Event delivery to PostHog is not asserted live (no key); capture is exercised only with the client disabled."
+      next_step: "Post-activation: confirm the six events arrive in the PostHog project with their timing properties (SC-001)."
+
+  - id: "best-effort-no-startup-impact"
+    title: "Telemetry never breaks or delays the app"
+    description: "Capture and init failures are swallowed; shutdown flush is bounded to 2s and never rejects (FR-009, FR-010, SC-003)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-009 / FR-010"
+    category: "ops"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "Telemetry must be invisible to reliability; a throw in a track* call or a hung flush blocking shutdown would regress the host."
+    evidence:
+      - id: "init-no-throw-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetry.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "INDIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "initTelemetry() returns without throwing; capture()/init wrapped in try/catch; shutdownTelemetry uses Promise.race with a 2s timeout and never rejects (code-reviewed)."
+    proof_gap:
+      summary: "The shutdown-timeout race and capture try/catch are verified by reading + the no-throw init test, not by a fault-injection test."
+      next_step: "Optional: a test that stubs a hanging client.shutdown() and asserts shutdownTelemetry resolves within ~2s."
+
+  - id: "opt-out-surfaces"
+    title: "User can disable telemetry via CLI and Settings UI, sharing one persisted setting"
+    description: "`omniterm telemetry off|on|status` and the Settings UI Privacy toggle both read/write the same settings.json `telemetryEnabled` field; initTelemetry derives its persisted opt-out from it. A `--no-telemetry` flag disables a single run. Env signals still override (FR-007, FR-013, FR-014)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-007 / FR-013 / FR-014"
+    category: "ops"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "An opt-out users can't easily find or that diverges between CLI and UI undermines the whole opt-out promise."
+    evidence:
+      - id: "cli-telemetry-smoke"
+        type: "smoke"
+        path: "apps/omniterm/bin/omniterm.js"
+        command: "SETTINGS_DIR=/tmp/x omniterm telemetry status|off|on; DO_NOT_TRACK=1 omniterm telemetry status"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Verified: status default ON; off writes {telemetryEnabled:false} to settings.json; status reflects it; DO_NOT_TRACK shows 'forced by DO_NOT_TRACK'; on re-enables. Same file core loadSettings reads + the UI PUTs."
+      - id: "settings-shared-store-static"
+        type: "static"
+        path: "packages/core/lib/settings.ts"
+        command: "telemetryEnabled in Settings + DEFAULT_SETTINGS; telemetry.ts initTelemetry reads loadSettings().telemetryEnabled"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "CLI (bin), UI (SettingsPanel PUT /api/settings), and telemetry gating all bind to one field; typecheck green."
+      - id: "gating-honors-persisted-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetryConfig.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "resolveTelemetryConfig(persistedOptOut=true) => disabled; initTelemetry feeds telemetryEnabled===false as persistedOptOut."
+    proof_gap:
+      summary: "The Settings UI toggle is verified by typecheck + the shared-field wiring, not a browser click-through; the CLI↔settings round-trip is smoke-tested, not a checked-in automated test."
+      next_step: "Optional: a browser check toggling Privacy→Telemetry and asserting settings.json flips; a CLI test asserting telemetry off => initTelemetry disabled."
+
+  - id: "frontend-telemetry"
+    title: "Curated front-end events + key perf metrics, same opt-out, no PII"
+    description: "A tiny custom fetch client (no posthog-js SDK) captures a curated set of user actions (app_loaded, workspace_switched, tab_closed, terminal_tab_opened, panel_toggled, file_opened_editor, plugin_tab_opened, settings_changed) and client perf (app load_ms, terminal_rendered render_ms — the slow first-open). track() POSTs each event to PostHog's /capture/ endpoint via keepalive fetch. Gated by the same opt-out via GET /api/telemetry; arms only when the server says enabled and shares the anonymous install id. No SDK, no autocapture/recording. Adds ≈0 to the tarball (-0.04%) (FR-015..FR-017)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/004-telemetry/spec.md"
+        anchor: "FR-015 / FR-016 / FR-017"
+    category: "ui"
+    priority: "P2"
+    risk:
+      weight: 4
+      rationale: "Front-end telemetry is the blind spot that hid the ~10s first-open; getting the gate/PII wrong either leaks data or re-blinds us. Autocapture was deliberately rejected because omniterm's DOM holds paths/repo/session names."
+    evidence:
+      - id: "gate-endpoint-shape"
+        type: "smoke"
+        path: "packages/core/server/startServer.ts"
+        command: "initTelemetry (clean env) -> getClientTelemetryConfig(); GET /api/telemetry"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Enabled -> {enabled:true, host:us.i.posthog.com, hasKey:true, hasDistinctId:true}; disabled -> {enabled:false} (no key). Verified via tsx + unit test."
+      - id: "no-sdk-tarball-flat"
+        type: "static"
+        path: "apps/omniterm/standalone"
+        command: "no posthog chunk in client assets; tarball delta vs 0.2.12"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Custom fetch client (no posthog-js): no posthog chunk in client assets; host tarball delta -0.04% vs 0.2.12 (was +14% full / +8.1% slim). posthog-node remains server-side only."
+      - id: "client-unit-tests"
+        type: "unit"
+        path: "packages/core/app/telemetryClient.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "buildCapturePayload carries only counts/types/timings + app_version/surface/$lib — no PII keys. init(enabled) arms; track POSTs to /capture/ with keepalive + correct body; setClientTelemetryEnabled(false) stops further POSTs (live opt-out). Testable now that there's no posthog-js browser global."
+    proof_gap:
+      summary: "Client events (app_loaded/terminal_rendered) not yet observed landing in PostHog — needs a real browser run (no headless E2E here). Enabling telemetry at runtime takes effect on restart (client + server gate resolve at boot); opting OUT is live (Settings hint + code document this)."
+      next_step: "Run omniterm in a browser, open an existing workspace, then query the analytics project for terminal_rendered render_ms to quantify the first-open slowness."
+
+  - id: "active-by-default-posthog-external"
+    title: "Telemetry is active by default; posthog-node is an external runtime dep"
+    description: "POSTHOG_KEY carries the maintainers' PostHog write-only key, so telemetry is on by default (opt-out) in an official release. SUPERSEDED SINCE: the key is no longer committed — the release workflow injects it at build time, so a source or fork build resolves it to '' and sends nothing. posthog-node is kept EXTERNAL (a host runtime dependency installed by npm, like express) — not bundled — so the host tarball barely grows and posthog patches flow via semver. Region US default; EU via OMNITERM_POSTHOG_HOST (FR-011)."
+    source_type: "IMPLEMENTATION"
+    source_refs:
+      - path: "packages/core/lib/telemetryConfig.ts"
+    category: "ops"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "An embedded key means data flows by default — the gating (opt-out + CI/test off) must be correct, and posthog must resolve at runtime for end users."
+    evidence:
+      - id: "posthog-external-static"
+        type: "static"
+        path: "apps/omniterm/standalone/server/server.js"
+        command: "grep getLibraryId (0) + posthog-node in apps/omniterm/package.json dependencies"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Bundle imports `from 'posthog-node'` externally (no inlined internals); posthog-node is a host dependency so `npm i -g @omniterm/host` installs it. Tarball +0.67% vs 0.2.11 (under the +1% gate)."
+      - id: "enabled-by-default-unit"
+        type: "unit"
+        path: "packages/core/lib/telemetryConfig.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "resolveTelemetryConfig({}, false) => enabled=true, host us.i.posthog.com, key set (verified via tsx). No-key (OMNITERM_POSTHOG_KEY='') => disabled."
+      - id: "live-delivery-e2e"
+        type: "smoke"
+        path: "packages/core/lib/telemetry.ts"
+        command: "manual E2E: initTelemetry + trackServerStarted/trackSessionCreated + shutdownTelemetry flush; client.captureImmediate against us.i.posthog.com"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "captureImmediate ACCEPTED by us.i.posthog.com (awaits send, no throw) => SC-001 delivery confirmed; real-path server_started+session_created flushed to the analytics project (test rows: event omniterm_e2e_verify / distinct_id e2e-verify-*). DO_NOT_TRACK=1 => isTelemetryEnabled() false (no client) => SC-002 at construction level."
+    proof_gap:
+      summary: "E2E ran from a dev machine against the real endpoint, not from the published tarball; SC-002 is construction-level (no client built) rather than a packet-capture."
+      next_step: "Optional after release: re-confirm from the installed package; remove the omniterm_e2e_verify / e2e-verify-* test rows from the analytics project."
