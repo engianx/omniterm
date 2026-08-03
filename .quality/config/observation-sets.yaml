@@ -1,0 +1,11 @@
+# Which runtime sources are assessed together. Orthogonal to feature scope:
+# a set selects RESULT SOURCES, a view selects FEATURES.
+observation_sets:
+  - id: "release"
+    name: "Host release"
+    description: >-
+      Everything the host release workflow proves in one run. This is currently
+      the only producer of canonical observations in this repository, so it is
+      also the default assessment set.
+    profiles:
+      - profile_id: "publish-host"

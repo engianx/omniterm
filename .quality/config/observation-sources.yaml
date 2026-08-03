@@ -1,0 +1,32 @@
+# Transport only: where canonical quality-observations.json files come from.
+# Contains no parser or format selection — the release workflow already converts
+# JUnit and gate outcomes with `quality-tools observations` and uploads the
+# canonical artifact. A profile is added only when that emit/upload step exists.
+profiles:
+  - id: "publish-host"
+    name: "Publish @omniterm/host"
+    description: >-
+      Canonical observations published by the host release workflow: the core and
+      demo-agent suites converted from JUnit, plus each hard gate's outcome
+      (typecheck, tests, telemetry-key bake, tarball size, functional smoke).
+    transport: "github-actions"
+    observation_path: "quality-observations.json"
+
+    source_refs:
+      - path: ".github/workflows/publish-host.yml"
+        label: "Workflow source (emits + uploads the canonical artifact)"
+      - path: ".quality/evidence/001-omniterm-core/quality-map.yaml"
+        label: "Feature quality map — core"
+      - path: ".quality/evidence/002-plugin-platform/quality-map.yaml"
+        label: "Feature quality map — plugin platform"
+
+    auth:
+      required_env:
+        - "GITHUB_TOKEN"
+
+    github:
+      repo: "engianx/omniterm"
+      workflow: "publish-host.yml"
+      artifact_names:
+        - "quality-host-observations"
+      branch: "main"

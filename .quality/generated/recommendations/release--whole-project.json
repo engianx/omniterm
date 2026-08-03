@@ -1,0 +1,60 @@
+{
+  "schema_version": "5",
+  "generated_at": "2026-08-03T16:49:22.741Z",
+  "project_path": "/Users/feng/Personal/omniterm",
+  "project_root": "/Users/feng/Personal/omniterm",
+  "observation_set_id": "release",
+  "observation_set_name": "Host release",
+  "scope": {
+    "kind": "whole-project",
+    "id": "whole-project",
+    "name": "Whole project"
+  },
+  "structural_scores": {
+    "coverage_score": 57,
+    "evidence_confidence_score": 61,
+    "structure_confidence_score": 70,
+    "quality_score_static": 63,
+    "evidence_confidence_label": "MEDIUM",
+    "structure_confidence_label": "MEDIUM",
+    "total_check_count": 36,
+    "basis": "Derived from project structure and 5 feature quality maps."
+  },
+  "runtime_review": {
+    "execution_status": "invalid",
+    "resolution_status": "invalid",
+    "observation_count": 0,
+    "evaluated_target_count": 0,
+    "evaluated_expectation_count": 0,
+    "profiles": [
+      {
+        "profile_id": "publish-host",
+        "profile_name": "Publish @omniterm/host",
+        "status": "invalid",
+        "transport": "github-actions"
+      }
+    ],
+    "execution_diagnostics": [
+      {
+        "severity": "error",
+        "code": "MISSING_OBSERVATION_SOURCE_ENV",
+        "message": "Observation source profile publish-host requires env vars that are not present: GITHUB_TOKEN."
+      }
+    ],
+    "resolution_diagnostics": [
+      {
+        "severity": "error",
+        "code": "MISSING_OBSERVATION_SOURCE_ENV",
+        "message": "Observation source profile publish-host requires env vars that are not present: GITHUB_TOKEN."
+      }
+    ],
+    "resolution_audit": {
+      "matched_observation_count": 0,
+      "unmatched_observation_count": 0,
+      "ambiguous_observation_count": 0,
+      "unmatched_examples": [],
+      "ambiguous_examples": []
+    }
+  },
+  "recommendations": []
+}

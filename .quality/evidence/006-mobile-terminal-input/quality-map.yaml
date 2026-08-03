@@ -1,3 +1,10 @@
+# Gate 1 (origin): how this map's check list AND its priorities were produced.
+# agent_generated = an agent authored these against the accepted spec. NOT a
+# claim that a human reviewed them — that is gate 4 below.
+structure_provenance: "agent_generated"
+# Gate 4 (human review): HUMAN-GATED. An agent may propose the list but must
+# never set this. Left false until the owner approves the whole check list.
+checks_reviewed: false
 target:
   id: "006-mobile-terminal-input"
   name: "mobile terminal input (accessory key bar + compose field)"
@@ -163,7 +170,7 @@ expectations:
         reliability: "MODERATE"
         contexts: ["local"]
         notes: "Armed state swaps the bar to a letter strip; onCtrlLetter sends control byte + dispatch('consume'); a non-letter bar key sends normally + dispatch('clear')."
-      - id: "agent-regression"
+      - id: "agent-regression-sticky-ctrl"
         type: "manual"
         path: "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
         command: "tsx tests/agent/run-agent-verification.ts (smoke suite)"
@@ -204,7 +211,7 @@ expectations:
         reliability: "STRONG"
         contexts: ["local"]
         notes: "Whole workspace: typecheck clean (5 projects); 169 core tests pass (incl. the real-ttyd injector check), no regressions."
-      - id: "agent-regression"
+      - id: "agent-regression-mobile-gating"
         type: "manual"
         path: "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
         command: "tsx tests/agent/run-agent-verification.ts (smoke suite)"
