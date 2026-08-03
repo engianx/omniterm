@@ -203,14 +203,27 @@ expectations:
         reliability: "MODERATE"
         contexts: ["local"]
         notes: "MobileInputChrome rendered only under `isMobile && activeTerminalVisible`; TerminalView change is a transparent forwardRef (no behavior change). Confirmed at a 390×844 mobile viewport: the bar renders and is interactive (mobile-keybar-landing.png)."
-      - id: "regression-typecheck-tests"
+      # See the same split in 005: a directory path can never join a runtime
+      # observation, and the workspace-wide claim is carried by the release
+      # workflow's two gate outcomes, not by any single file.
+      - id: "regression-typecheck-gate"
         type: "build"
-        path: "packages/core"
-        command: "pnpm -r typecheck && pnpm -r test"
+        path: ".github/workflows/publish-host.yml"
+        test_case: "Typecheck (hard gate)"
+        command: "pnpm -r typecheck"
         depth: "INDIRECT"
         reliability: "STRONG"
-        contexts: ["local"]
-        notes: "Whole workspace: typecheck clean (5 projects); 169 core tests pass (incl. the real-ttyd injector check), no regressions."
+        contexts: ["ci"]
+        notes: "Release-blocking typecheck across all workspace projects. Historical local run: clean across 5 projects."
+      - id: "regression-suite-gate"
+        type: "build"
+        path: ".github/workflows/publish-host.yml"
+        test_case: "Tests (hard gate)"
+        command: "pnpm -r test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["ci"]
+        notes: "Release-blocking full-suite run. Historical local run: 169 core tests pass, including the real-ttyd injector check, no regressions."
       - id: "agent-regression-mobile-gating"
         type: "manual"
         path: "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
