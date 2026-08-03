@@ -119,14 +119,29 @@ expectations:
         reliability: "STRONG"
         contexts: ["local"]
         notes: "detectViewerKind maps each image/pdf/csv extension (case-insensitive), returns null for ts/md/html/zip/etc., and never both-claims an extension with detectPreviewKind."
-      - id: "regression-typecheck-tests"
+      # "The whole workspace still typechecks and the whole suite still passes"
+      # is not carried by any one file, so the old `path: packages/core` could
+      # never join a result. The release workflow records each gate outcome as a
+      # single observation keyed by (workflow file, gate name), which is a 1:1
+      # match for this claim. Split into the two gates it actually asserts.
+      - id: "regression-typecheck-gate"
         type: "build"
-        path: "packages/core"
-        command: "pnpm -r typecheck && pnpm -r test"
+        path: ".github/workflows/publish-host.yml"
+        test_case: "Typecheck (hard gate)"
+        command: "pnpm -r typecheck"
         depth: "INDIRECT"
         reliability: "STRONG"
-        contexts: ["local"]
-        notes: "Full repo: 136 tests pass (core 127 + plugins 9), typecheck clean after the FilePanel/fs refactor."
+        contexts: ["ci"]
+        notes: "Release-blocking typecheck across all workspace projects. Historical local run after the FilePanel/fs refactor: typecheck clean."
+      - id: "regression-suite-gate"
+        type: "build"
+        path: ".github/workflows/publish-host.yml"
+        test_case: "Tests (hard gate)"
+        command: "pnpm -r test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["ci"]
+        notes: "Release-blocking full-suite run. Historical local run after the FilePanel/fs refactor: 136 tests pass (core 127 + plugins 9)."
     proof_gap:
       summary: "FilePanel open/hydrate wiring has no component-level test (no RTL harness in repo)."
       next_step: "Manual quickstart #16 (open a .ts/.md/binary → unchanged); optional future component test."
