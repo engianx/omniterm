@@ -1,0 +1,174 @@
+target:
+  id: "002-plugin-platform"
+  name: "plugin platform"
+  scope: "feature"
+  aliases: []
+  source_refs:
+    - path: "specs/002-plugin-platform/spec.md"
+      label: "Feature spec"
+
+expectations:
+  - id: "clean-cut-boundary"
+    title: "Plugins are deletable without breaking the host"
+    description: "Removing a plugin package and dropping its flag leaves the host building, typechecking, and booting base functionality; no plugin code is statically imported by host/core (SC-004, FR-008)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/002-plugin-platform/spec.md"
+        anchor: "SC-004 / FR-008"
+    category: "ops"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "The clean-cut boundary is the architectural promise of the whole extraction; if a plugin can break the host, the generic-host model fails."
+    evidence:
+      - id: "no-static-plugin-imports"
+        type: "unit"
+        path: "packages/core/clean-cut-boundary.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Deterministic test scans all host (apps/omniterm/src) + core source for import/require/dynamic-import specifiers referencing an external plugin package; asserts none exist, and that @omniterm/host declares no plugin dependency. The loader reaches plugins only via runtime import() of a --plugin string, never a source literal."
+      - id: "build-with-plugin-removed"
+        type: "smoke"
+        path: "UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo)"
+        test_case: "clean-cut-build-with-plugin-removed"
+        command: "mv plugins/_fixture-plugin away; pnpm -r typecheck && pnpm --filter @omniterm/host build"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["ci"]
+        notes: "The quality-observations workflow removes plugins/_fixture-plugin, runs typecheck + host build, and emits a clean-cut-build-with-plugin-removed manifest observation. Joins under the ci-observations evaluation set (GITHUB_TOKEN + a workflow run required)."
+    proof_gap:
+      summary: "The static no-coupling invariant is a runtime-observable unit test, and the build-with-plugin-removed gate is now wired in CI (the quality-observations workflow removes plugins/_fixture-plugin and runs typecheck + host build, emitting a manifest observation) — pending its first CI run to join under the ci-observations evaluation set."
+      next_step: "Run the quality-observations workflow and confirm the clean-cut build-removal manifest joins under ci-observations."
+
+  - id: "plugin-loader"
+    title: "Plugins load at runtime by path or package name"
+    description: "`--plugin <spec>` (repeatable) loads a plugin by filesystem path or CWD-first package name, composes multiple, and fails fast on unresolvable/throwing/duplicate plugins (SC-001, SC-006, FR-001/002/007)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/002-plugin-platform/spec.md"
+        anchor: "FR-001 / SC-001 / SC-006"
+    category: "ops"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "The loader is the entry point of the platform; silent mis-load or half-load is hard to diagnose."
+    evidence:
+      - id: "loader-smoke-path-and-name"
+        type: "smoke"
+        path: "apps/omniterm/src/server.ts"
+        command: "node standalone/server/server.js --plugin <path> ; --plugin @omniterm/fixture-plugin"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Both path-based and name-based (CWD-first) loads verified to serve the fixture manifest + create + iframe."
+      - id: "validate-fail-fast"
+        type: "unit"
+        path: "packages/core/server/routes/manifest.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "validatePluginManifests: renderability + duplicate non-empty proxyPrefix fail-fast."
+      - id: "loader-parse-validate-units"
+        type: "unit"
+        path: "packages/core/lib/pluginLoader.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "parsePluginSpecs + validatePluginModule (extracted to @omniterm/core, throwing PluginSpecError instead of process.exit): repeated/missing --plugin values, plugin/default/factory shapes, missing type, throwing factory, and duplicate-tab-type fail-fast."
+    proof_gap:
+      summary: "parse + validation are now unit-tested; only module resolution + dynamic import() (host-context, in apps/omniterm/src/server.ts) remains smoke-only."
+      next_step: "Optionally cover resolution (path vs CWD-first package name) by injecting resolvers, so the host's import path is unit-testable too."
+
+  - id: "manifest-driven-client"
+    title: "Plugin tab types render from the manifest with no host-client rebuild"
+    description: "The stock client renders external plugins' [+] entries, file handlers, persisted iframes, and indicators from GET /api/plugins data (SC-002, FR-003/004)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/002-plugin-platform/spec.md"
+        anchor: "FR-003 / FR-004 / SC-002"
+    category: "ui"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "This is what makes plugins runtime-loadable; a regression silently breaks every external plugin's UI."
+    evidence:
+      - id: "manifest-endpoint-smoke"
+        type: "smoke"
+        path: "packages/core/server/routes/manifest.ts"
+        command: "curl /api/plugins (with fixture loaded)"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Manifest endpoint serves the fixture's full descriptor; client consumes this shape."
+      - id: "reconcile-units"
+        type: "unit"
+        path: "packages/core/app/manifestReconcile.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Instance reconciliation (optimistic seeds, close tombstones) + isTabReady gating."
+    proof_gap:
+      summary: "The browser-rendered [+] entry, file-handler open, and persisted-iframe behavior are not agent-verified (need a browser)."
+      next_step: "Agent/manual browser check: load fixture, open via [+] and via file handler, switch tabs (iframe persists), confirm no client rebuild."
+
+  - id: "hostcontext-public-api"
+    title: "Plugins use host services through HostContext only"
+    description: "HostContext exposes confinePath/allowedRoots/settings/repos/worktrees so plugins never import core internals; confinement matches the host's own fs routes (SC-003, FR-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/002-plugin-platform/spec.md"
+        anchor: "FR-005 / SC-003"
+    category: "security"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "Plugins reaching into internals breaks the boundary; divergent confinement is a security risk (caught + fixed in review)."
+    evidence:
+      - id: "fixture-uses-hostcontext"
+        type: "smoke"
+        path: "plugins/_fixture-plugin/index.js"
+        command: "GET /fixture/:id (renders host.repos() count; create confines via host.confinePath)"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Fixture exercises confinePath + repos via the public HostContext, no core-internal import."
+      - id: "allowedroots-reuse"
+        type: "static"
+        path: "packages/core/server/startServer.ts"
+        depth: "STATIC"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "HostContext reuses lib/allowedRoots (same allowlist as /api/fs + /api/preview) — review fix for the homedir divergence."
+      - id: "confinepath-rejection-contract"
+        type: "external"
+        path: "EXTERNAL: an out-of-tree plugin's adapter-confinement test"
+        command: "not runnable in this repository"
+        depth: "DIRECT"
+        reliability: "UNVERIFIABLE_HERE"
+        contexts: []
+        notes: "A real plugin route calling host.confinePath rejects an out-of-root path with 403 — the over-the-wire rejection. This proof still runs, but in the plugin's own repository: the plugin moved out when the host was open-sourced, so this repo cannot execute it and MUST NOT count it as local evidence. Kept as a pointer, not as proof."
+    proof_gap:
+      summary: "REOPENED. The over-the-wire host.confinePath rejection was proven by an out-of-tree plugin's contract test, which left with the plugin. In this repo the check is now backed only by the in-repo fixture plugin (smoke depth), so the contract-level assertion is unproven here. Broader HostContext surface (repos, settings) over the wire remains smoke-only."
+      next_step: "Add an in-repo contract test — the fixture plugin can assert the 403 over the wire without depending on any external plugin — then restore this check to DIRECT/STRONG."
+
+  - id: "terminal-initial-command"
+    title: "A file handler can run a command in a terminal"
+    description: "Open a terminal that runs a given command so its browser auto-registers in the panel (FR-006, SC-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/002-plugin-platform/spec.md"
+        anchor: "FR-006 / SC-005"
+    category: "other"
+    priority: "P2"
+    risk:
+      weight: 2
+      rationale: "Convenience capability; the run-in-terminal + watch-browser flow can also be done by typing the command manually."
+    evidence: []
+    proof_gap:
+      summary: "NOT IMPLEMENTED — task T009 deferred. The plugin platform (loader/manifest/HostContext/clean-cut) does not depend on it. Tracked as the run-command-in-terminal capability behind custom launchers (GitHub issue #12)."
+      next_step: "Implement terminal initial-command (tmux send-keys via the create-session route) + a run-in-terminal file handler, then test. Blocked on issue #12."

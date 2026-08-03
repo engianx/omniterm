@@ -1,0 +1,274 @@
+target:
+  id: "006-mobile-terminal-input"
+  name: "mobile terminal input (accessory key bar + compose field)"
+  scope: "feature"
+  aliases: []
+  source_refs:
+    - path: "specs/006-mobile-terminal-input/spec.md"
+      label: "Feature spec"
+    - path: "specs/006-mobile-terminal-input/research.md"
+      label: "Verified mechanism (version pin, live API, per-mode bytes)"
+
+expectations:
+  - id: "byte-correct-injection"
+    title: "Every bar key and composed line delivers its exact expected bytes through the real terminal"
+    description: "Esc→\\x1b, Tab→\\x09, Ctrl-C→\\x03, Ctrl-<letter>→\\x01..\\x1a, composed text once (+\\r when run) — produced by the shipped injector and accepted by ttyd's xterm.js (FR-004, FR-005, FR-008, FR-012, FR-013, SC-004)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-004 / FR-008 / SC-004"
+    category: "correctness"
+    priority: "P1"
+    risk:
+      weight: 5
+      rationale: "The feature's whole purpose; a wrong byte sends garbage to the shell or fails to interrupt a command."
+    evidence:
+      - id: "input-bytes-unit"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "23 cases: control-byte mapping (c→\\x03, a→\\x01, z→\\x1a, case-insensitive, non-letter→null), descriptor bytes (Esc/Tab/Ctrl-C/symbols), compose (once, +\\r only when run, empty no-op, never wraps)."
+      - id: "headless-ttyd-bytes"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.injector.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "The REAL production module is esbuild-bundled into a headless Chromium page running a live ttyd+xterm.js; term.onData capture confirmed all 10 checks (Esc/Tab/Ctrl-C/Ctrl-R, arrow normal+DECCKM, compose ±run) ALL PASS against the shipped terminal build."
+      - id: "full-app-integration-smoke"
+        type: "manual"
+        path: "UNAVAILABLE: browser screenshot (never tracked in git)"
+        command: "built client + running host at 390×844 mobile viewport, playwright-core"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "In the real running app: the bar renders (Ctrl/Esc/Tab/^C/arrows/symbols + 💬 toggle, 0 console errors); tapping buttons drove the live terminal through the full chain (forwardRef→integration→getWindow→MobileInputChrome→term.input): Esc→\\x1b, ^C→\\x03, ↑→\\x1b[A, Ctrl→letter strip→r→\\x12, compose 'echo hi'→sent unwrapped."
+    proof_gap:
+      summary: "None material for byte correctness; verified by unit, live-terminal, and full-app integration evidence."
+      next_step: "n/a"
+
+  - id: "mode-faithful-arrows"
+    title: "Arrow keys respect application-cursor mode (DECCKM) live"
+    description: "Arrows emit ESC[A..D in normal mode and ESC O A..D once a TUI enables DECCKM, read live from term.modes.applicationCursorKeysMode, so they stay correct inside vim/less/fzf (FR-007, SC-002)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-007 / SC-002"
+    category: "correctness"
+    priority: "P1"
+    risk:
+      weight: 4
+      rationale: "A fixed arrow sequence emits stray characters inside application-cursor TUIs — a common, visible breakage."
+    evidence:
+      - id: "arrow-mode-unit"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "arrowSequence + sendDescriptor asserted for both modes × 4 directions."
+      - id: "arrow-mode-live"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.injector.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Toggled DECCKM on the real terminal (ESC[?1h); the SAME descriptor emitted ESC[A normally and ESC O A under DECCKM; term.modes reflected the change."
+    proof_gap:
+      summary: "None material."
+      next_step: "n/a"
+
+  - id: "never-paste-control-safe"
+    title: "No injected input is ever bracket-wrapped; control bytes pass through intact"
+    description: "Delivery uses term.input(), never term.paste(); composed text under bracketed-paste mode is NOT wrapped in ESC[200~/201~ and control bytes are not mangled (FR-004, FR-012)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-004 / FR-012"
+    category: "correctness"
+    priority: "P1"
+    risk:
+      weight: 3
+      rationale: "term.paste() wraps under bracketed-paste mode (measured), which would neuter control bytes and suppress command execution."
+    evidence:
+      - id: "no-wrap-live"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.injector.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "With bracketed-paste mode ON (ESC[?2004h, term.modes.bracketedPasteMode=true), sendComposed('abc') emitted raw 'abc' — no ESC[200~ wrapper — confirming the input() (not paste()) path."
+    proof_gap:
+      summary: "None material."
+      next_step: "n/a"
+
+  - id: "feature-detect-degrade"
+    title: "The chrome feature-detects term and degrades to a safe no-op when unavailable"
+    description: "getTerminal() verifies term.input + term.modes and returns null (never throws) for missing/cross-origin/not-ready handles; senders no-op (FR-003, FR-014, SC-006)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-014 / SC-006"
+    category: "resilience"
+    priority: "P2"
+    risk:
+      weight: 3
+      rationale: "ttyd reloads and cross-origin states must not throw or send to a dead handle."
+    evidence:
+      - id: "feature-detect-unit"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "getTerminal null for null/undefined win, missing term, missing input, missing modes — never throws; senders return false when unavailable."
+    proof_gap:
+      summary: "Live ttyd-reload recovery not exercised by automation (transient null handled by lazy read at send time)."
+      next_step: "Optional: a browser test that reloads the iframe mid-session and confirms recovery."
+
+  - id: "sticky-ctrl-state"
+    title: "The sticky Ctrl modifier arms/consumes/clears deterministically"
+    description: "ctrlReducer: toggle arms/disarms, consume + clear return to idle; armed reveals a letter strip and a tapped letter sends its control byte then disarms (FR-009, FR-010)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-009 / FR-010"
+    category: "correctness"
+    priority: "P2"
+    risk:
+      weight: 2
+      rationale: "A stuck armed state would mis-send subsequent keys; bounded blast radius (one modifier)."
+    evidence:
+      - id: "ctrl-reducer-unit"
+        type: "unit"
+        path: "packages/core/plugins/terminal/lib/terminalInput.test.ts"
+        command: "pnpm --filter @omniterm/core test"
+        depth: "DIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "toggle idle↔armed, consume→idle, clear→idle, arm→armed."
+      - id: "ctrl-wiring-impl"
+        type: "code-review"
+        path: "packages/core/plugins/terminal/components/MobileInputChrome.tsx"
+        command: "read"
+        depth: "INDIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Armed state swaps the bar to a letter strip; onCtrlLetter sends control byte + dispatch('consume'); a non-letter bar key sends normally + dispatch('clear')."
+      - id: "agent-regression"
+        type: "manual"
+        path: "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
+        command: "tsx tests/agent/run-agent-verification.ts (smoke suite)"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Re-runnable agent test drives a mobile browser: arm Ctrl → letter strip appears → tap 'l' clears the screen (Ctrl-L) and the strip disappears (auto-disarm)."
+    proof_gap:
+      summary: "None material — the armed-strip interaction + disarm are exercised by the re-runnable agent test; clear-on-blur remains code-reviewed only."
+      next_step: "Optional: extend the agent test to assert clear-on-blur."
+
+  - id: "mobile-gated-no-desktop-regression"
+    title: "Chrome is mobile-only and desktop terminal input is unchanged"
+    description: "The chrome renders only when isMobile and a terminal is the active visible surface; desktop input is byte-for-byte unchanged (FR-001, SC-005)."
+    source_type: "SOURCE"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-001 / SC-005"
+    category: "correctness"
+    priority: "P2"
+    risk:
+      weight: 2
+      rationale: "A regression could leak the bar onto desktop or alter the desktop terminal surface."
+    evidence:
+      - id: "gating-impl"
+        type: "code-review"
+        path: "packages/core/plugins/terminal/integration.tsx"
+        command: "read"
+        depth: "INDIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "MobileInputChrome rendered only under `isMobile && activeTerminalVisible`; TerminalView change is a transparent forwardRef (no behavior change). Confirmed at a 390×844 mobile viewport: the bar renders and is interactive (mobile-keybar-landing.png)."
+      - id: "regression-typecheck-tests"
+        type: "build"
+        path: "packages/core"
+        command: "pnpm -r typecheck && pnpm -r test"
+        depth: "INDIRECT"
+        reliability: "STRONG"
+        contexts: ["local"]
+        notes: "Whole workspace: typecheck clean (5 projects); 169 core tests pass (incl. the real-ttyd injector check), no regressions."
+      - id: "agent-regression"
+        type: "manual"
+        path: "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
+        command: "tsx tests/agent/run-agent-verification.ts (smoke suite)"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Agent test runs in a mobile viewport (390×844, touch) and asserts the chrome renders and is interactive there; the render is gated on isMobile so it does not appear on desktop."
+    proof_gap:
+      summary: "No RTL component unit test (no harness in repo); covered instead by the re-runnable mobile-viewport agent test + typecheck."
+      next_step: "n/a"
+
+  - id: "collapsible-chrome-and-one-tap-focus"
+    title: "Bar collapses to a launcher that persists; tapping 💬 focuses the field in one tap"
+    description: "Collapsed »-launcher by default, persisted in localStorage; expands to «+keys and toggles in place. Tapping 💬 mounts the compose field (flushSync) and focuses it within the same tap so typing lands immediately (FR-006 adjacent; collapsible-chrome decisions)."
+    source_type: "IMPLEMENTATION"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-002 / FR-006"
+    category: "usability"
+    priority: "P2"
+    risk:
+      weight: 2
+      rationale: "A regression here reintroduces the extra tap / lost discoverability the user explicitly flagged."
+    evidence:
+      - id: "collapse-focus-agent"
+        type: "manual"
+        path: "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
+        command: "tsx tests/agent/run-agent-verification.ts (smoke suite)"
+        depth: "DIRECT"
+        reliability: "MODERATE"
+        contexts: ["local"]
+        notes: "Agent test: » collapsed by default; tap expands to «+keys; tap « collapses; reload → still collapsed (localStorage persist); tap 💬 → text input lands on the first try (focused in one tap)."
+    proof_gap:
+      summary: "The physical on-screen keyboard rising on that one tap is iOS-only and not asserted by the emulated browser (see device_pending)."
+      next_step: "Device pass: confirm the soft keyboard rises on the first 💬 tap."
+
+failure_handling:
+  - id: "term-unavailable-noop"
+    title: "Sends are safe no-ops when the terminal handle is unavailable"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-014 / SC-006"
+    notes: "getTerminal() returns null (never throws) for not-ready/cross-origin handles; every sender returns false and writes nothing. Unit-tested."
+
+device_pending:
+  - id: "ios-focus-retention"
+    title: "Soft keyboard stays open on bar tap (focus retention)"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-006 / SC-001"
+    notes: "Implemented via pointer-down preventDefault on bar buttons; whether iOS Safari keeps the iframe textarea focused on a cross-document parent tap is a WebKit behavior that cannot be verified from this environment. NEEDS a physical iPhone/iPad pass."
+  - id: "ios-visualviewport-position"
+    title: "Bar docks above the soft keyboard via visualViewport"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-002"
+    notes: "Implemented with visualViewport resize/scroll listeners; exact positioning across rotation/predictive-bar height needs on-device confirmation."
+  - id: "ios-live-dictation"
+    title: "iPhone dictation arrives once in the compose field"
+    source_refs:
+      - path: "specs/006-mobile-terminal-input/spec.md"
+        anchor: "FR-011 / SC-003"
+    notes: "Compose field owns its value with predictive text off (the mechanism that fixes WebKit bug 261764's cumulative re-send); the duplication-free outcome is only confirmable by dictating on a real device."
+
+summary:
+  confidence: "MEDIUM"
+  rationale: "Byte correctness and app wiring — the feature's core — are HIGH and now guarded by automated regression tests: 23 STRONG unit cases for the pure logic, PLUS a wired-in integration test (terminalInput.injector.test.ts, part of `pnpm test`) that runs the REAL module against a live ttyd+xterm.js and asserts per-mode bytes (control bytes, mode-faithful arrows under live DECCKM, compose never bracket-wrapped under live bracketed-paste) — it skips cleanly where ttyd/Chromium are absent. The component + integration behaviors (key effects, sticky-Ctrl strip, compose single-delivery, collapse/persist, one-tap focus, mobile-only gating) are covered by a re-runnable agent test in the smoke suite (tests/agent/mobile-terminal-input). Core suite: 169 tests pass, typecheck clean, no desktop regression. Confidence is held to MEDIUM, not HIGH, because three iOS-device-only behaviors cannot be verified from any emulated browser: soft-keyboard focus retention on bar tap, visualViewport positioning, and live dictation arriving once. These are implemented to the verified mechanism but require a physical iPhone/iPad pass (see device_pending)."
