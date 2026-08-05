@@ -1,185 +1,225 @@
 # omniterm
 
-Your agent terminals, accessible everywhere.
+omniterm puts persistent terminal sessions, project files, and a live browser
+view in one web app.
 
-A generic, standalone, browser-based development host: persistent terminals, a
-live browser-view panel, and workspace/file management in one screen, extensible
-at runtime through a clean plugin API.
+Run it on the computer that holds your projects, then open it from a laptop,
+tablet, or phone. Your terminal sessions keep running when you close the browser
+or lose your connection.
 
-omniterm is domain-agnostic. Domain-specific behavior (such as a YAML test
-debugger) ships as separate, optional plugins that can be added or removed
-without touching the host.
+![omniterm web interface](https://raw.githubusercontent.com/engianx/omniterm/main/docs/assets/omniterm-screenshot.png)
 
-## Why omniterm?
+## Why use omniterm?
 
-- **Built for AI agents** — run Claude Code, Codex, or any CLI agent in a terminal
-- **Always running** — 24/7, persist across browser closes, network drops, and device switches
-- **Work from anywhere** — start on your desktop / cloud, continue from your iPad, smartphone
-- **Easy setup** — one command to start, accessible through the browser. No SSH tunnels
-- **Lightweight** — fast first load; editor grammars load on demand, so you only download the languages you open
+- **Use your preferred coding agent.** Run Codex, Claude Code, or any other
+  command-line tool.
+- **Keep work running.** Terminal sessions survive closed tabs, lost
+  connections, device changes, and omniterm restarts.
+- **Work from any device.** You only need a browser and secure network access to
+  the computer running omniterm.
+- **Use your existing tools.** Every terminal is a real `tmux` session that you
+  can also open over SSH.
+- **Add features with plugins.** Plugins load at runtime without changing or
+  rebuilding the main app.
 
-## Quick Start
+## Install and run
 
-Install the prerequisites (`tmux` + `ttyd`):
+omniterm requires [Node.js](https://nodejs.org/) 24 or newer, `tmux`, and
+`ttyd`.
+
+Install `tmux` and `ttyd`:
 
 ```bash
 # macOS
 brew install tmux ttyd
 
-# Ubuntu/Debian
+# Ubuntu or Debian
 sudo apt install tmux
 sudo snap install ttyd --classic
 ```
 
-Then install and run:
+Install omniterm and start it:
 
 ```bash
 npm install -g @omniterm/host
 omniterm
-# Open http://localhost:17717
 ```
 
-The npm package is **`@omniterm/host`**; the command it installs is
-**`omniterm`**. No install? Run it directly with `npx @omniterm/host`.
+Then open <http://localhost:17717>.
 
-Use a custom port, or override the internal ttyd port range (7700-7799) if it
-conflicts:
+The npm package is named `@omniterm/host`, but the command is `omniterm`. You
+can also run it without installing it globally:
+
+```bash
+npx @omniterm/host
+```
+
+### Change the ports
+
+Use a different web server port:
 
 ```bash
 omniterm --port 8080
+```
+
+omniterm uses ports 7700 through 7799 for terminal sessions. If another program
+uses those ports, choose a different range:
+
+```bash
 omniterm --ttyd-ports 8800-8899
 ```
 
-Run `omniterm --help` for all options.
+Run `omniterm --help` to see every command-line option.
 
-### Plugins
+## What you get
 
-`--plugin` is repeatable; plugins compose in order. Enable one by published
-package name or local path:
+### Terminals
 
-```bash
-omniterm --plugin @scope/my-plugin                    # by published package name
-omniterm --plugin ./plugins/demo-agent/dist/index.js  # ...or by path (dev)
-```
+- Open several terminal tabs and split each tab into multiple panes.
+- Arrange panes side by side or top to bottom.
+- Reorder and rename tabs.
+- Scroll through terminal output and select text normally.
+- Find and use `tmux` sessions that were started outside omniterm.
 
-A path must point at the plugin's built entry file — a bare directory is not a
-resolvable ES module.
+### Workspaces
 
-Writing your own plugin takes one dev dependency —
-[`@omniterm/plugin-types`](packages/plugin-types) — and no dependency on the
-host's internals. `plugins/demo-agent` is a complete worked example.
+- Switch between Git repositories, worktrees, and regular directories.
+- Clone a repository or browse the server's files to add a workspace.
+- Create and manage Git worktrees from the browser.
+- Run multiple coding agents in separate workspaces and watch them side by side.
 
-A full user-facing feature tour lives on the
-[`@omniterm/host` npm page](https://www.npmjs.com/package/@omniterm/host).
+### Files and browser view
 
-## Packages
+- Browse and edit project files with syntax highlighting and save protection.
+- View images, PDFs, and CSV or TSV files without leaving omniterm.
+- See file changes when another program or coding agent edits a file.
+- Open a live view of a browser started by a process in your terminal.
+- Load editor support only when you open a file that needs it.
 
-| Package | Path | Published | Notes |
-| --- | --- | --- | --- |
-| `@omniterm/host` | `apps/omniterm` | yes | CLI; bin: `omniterm` |
-| `@omniterm/core` | `packages/core` | no (bundled) | host SDK |
-| `@omniterm/plugin-types` | `packages/plugin-types` | yes | type-only plugin contract |
-| `@omniterm/demo-agent-plugin` | `plugins/demo-agent` | no | example plugin (coding-agent panel) |
+### Phones, tablets, and desktops
 
-Plugins are published from their own repositories on their own schedules. The
-host has never imported one — `packages/core/clean-cut-boundary.test.ts` fails
-the build if it ever does.
+- Use a layout designed for both desktop and mobile screens.
+- Use touch-friendly terminal controls for keys that mobile keyboards leave out.
+- Add omniterm to your home screen as a Progressive Web App (PWA).
 
-## Architecture
+## Remote access and security
 
-omniterm is a single Node process that serves a browser UI and brokers
-everything else out to proven system tools.
+> [!WARNING]
+> By default, omniterm listens on all network interfaces. It does not provide
+> its own login or access control, and its APIs can start commands in your
+> shell. Do not expose its port directly to the public internet. Use a trusted
+> private network, VPN, or SSH tunnel.
 
-- **Host process** — an Express + WebSocket server (`@omniterm/core`'s
-  `startServer`). It serves the client, exposes a small REST surface for
-  workspace / repo / file / settings operations, and streams host events (tab
-  lifecycle, file changes) to the browser over Server-Sent Events
-  (`/api/events`).
-- **Terminals** — each terminal is a `tmux` session fronted by a `ttyd`
-  instance on a loopback port; the host transparently reverse-proxies ttyd's
-  HTTP and WebSocket traffic (`http-proxy`) under `/t/:sessionId/*`. The host
-  ships no terminal emulator of its own — rendering is ttyd's xterm in the
-  browser.
-- **Plugins** — a tab type is a plugin that owns its HTTP routes, its
-  WebSocket upgrades, and its UI (an iframe or a mounted component). Plugin
-  upgrades take precedence over the terminal proxy in the upgrade dispatcher,
-  so a plugin can claim its own `/ws/...` path. The built-in terminal is
-  itself a plugin — proof the seam is real.
-- **State** — workspace, session, file-tab, and layout state persist to a
-  single JSON file under the user's home directory; tmux owns live terminal
-  session state. There is no database.
-
-## Design principles
-
-These are deliberate trade-offs, not incidental ones. Each buys a property we
-consider core.
-
-**Server-first, browser-delivered.** The product is a server you run on the
-machine where your work lives; the UI is any browser. Install it once on the
-box and reach it from a laptop, tablet, or phone — nothing installed
-client-side, no pairing step, no per-device version lock-step. That is the
-opposite trade-off from a thick installed client, which must be deployed and
-updated on every device it runs on. The one cost — you have to run a process
-somewhere — is exactly what makes "work from any device" free.
-
-**Delegate persistence to tmux; don't own it.** Because every terminal is a
-real tmux session, sessions survive browser disconnects, network drops, and
-host restarts for free — and they are never captive to omniterm. You can `ssh`
-into the same machine and `tmux attach` the very session you were driving in
-the browser; a session you started by hand over SSH is discovered and adopted
-into the UI; and if the host process dies, your long-running work keeps going.
-A client that bundles its own multiplexer can persist across *its own*
-restarts, but those sessions live and die inside that one app. Ours don't.
-
-**Thin, standard, inspectable.** The host is small and assembled from
-components an operator already understands — Node, Express, tmux, ttyd. It
-deploys on a headless cloud box with no display server, no GPU, and no native
-build step; it is small enough to audit and fast to start. Footprint and a
-no-surprises runtime are treated as features, not afterthoughts.
-
-**A plugin boundary that actually holds.** Domain behavior lives in plugins
-loaded at runtime by path or package name — composable, and each one deletable
-without the host noticing. The host SDK (`@omniterm/core`) carries no
-product-specific dependencies, so the same host can be embedded by unrelated
-consumers, each enabling its own plugin set with no compile-time coupling.
-Extensibility here is a designed-in boundary, not a fork point.
-
-## Development
-
-Product intent lives in `docs/prd.md`, the roadmap in
-`docs/feature-breakdown.md`, and per-feature specs in `specs/`. Specs are the
-source of truth; code is an artifact; tests are evidence. Task lists under
-`specs/*/tasks.md` are archived implementation records, not current checklists.
-
-Before touching the client bundle or adding a browser dependency, read
-[docs/client-bundle-policy.md](docs/client-bundle-policy.md) — two build gates
-enforce it.
-
-- Workspace layout: `apps/*` (products), `packages/*` (libraries), `plugins/*`
-  (optional, deletable host extensions).
-- Node.js 24+, TypeScript 5 (strict, ESM only), pnpm.
+For an SSH tunnel, bind omniterm to the remote computer's loopback address:
 
 ```bash
-pnpm install
-pnpm run dev
-# Open http://localhost:17717
+omniterm --host 127.0.0.1
 ```
 
-`pnpm test` runs the unit and integration suites; `pnpm typecheck` is a hard
-gate in CI. Two integration tests self-skip unless their tools are present:
+Then run this on your local computer:
 
 ```bash
-brew install tmux ttyd              # terminal session + ttyd proxy tests
-pnpm exec playwright install chromium   # xterm byte-level injector test
+ssh -L 17717:localhost:17717 your-server
 ```
 
-### Telemetry in a source build
+Open <http://localhost:17717> while the tunnel is running.
 
-The PostHog key is injected at release-build time and is not in this repo, so a
-build from source sends nothing. See
-[apps/omniterm/README.md](apps/omniterm/README.md#telemetry) for what the
-published package collects and how to turn it off.
+You can also open `http://your-server.tailnet:17717` through a private network
+such as Tailscale.
+
+Make sure your firewall or network rules allow access only from devices you
+trust.
+
+## Add plugins
+
+Plugins add features without changing the main app. Load a published npm package
+by name, or load a local plugin by the path to its built entry file:
+
+```bash
+omniterm --plugin @scope/my-plugin
+omniterm --plugin ./plugins/demo-agent/dist/index.js
+```
+
+To load more than one plugin, repeat the `--plugin` option. omniterm loads them
+in the order you provide them.
+
+A local path must point to the plugin's built JavaScript entry file, not just
+its directory.
+
+To write a plugin, install
+[`@omniterm/plugin-types`](https://www.npmjs.com/package/@omniterm/plugin-types)
+as a development dependency. Your plugin does not need to depend on omniterm's
+internal code. See the
+[`demo-agent` plugin](https://github.com/engianx/omniterm/tree/main/plugins/demo-agent)
+for a complete example.
+
+## Telemetry
+
+The official npm package collects pseudonymous usage and performance data to
+help improve omniterm. A random installation ID connects events from one
+installation. The ID does not come from an account, username, hostname, or
+machine identifier.
+
+Events may include:
+
+- the installation ID, event time, omniterm version, and event name;
+- the server platform and Node.js version;
+- session counts and timings, file language, and cleanup counts; and
+- app and terminal timings, mobile or desktop mode, and the types of workspaces,
+  panels, tabs, viewers, and editor languages used.
+
+Events do not include names, file or terminal contents, file paths, repository
+names, hostnames, session names, or third-party plugin identifiers. omniterm
+disables PostHog's GeoIP enrichment. PostHog still receives the network data
+needed to deliver an event; see PostHog's privacy policy for its handling and
+retention rules.
+
+Telemetry is on by default in the official npm package and off in automated
+environments. You can turn it off in any of these ways:
+
+```bash
+omniterm telemetry off          # Save the setting
+omniterm telemetry status       # Show the current setting
+omniterm --no-telemetry         # Turn it off for one run
+
+export OMNITERM_TELEMETRY=0     # omniterm-specific environment setting
+export DO_NOT_TRACK=1           # Standard environment setting
+```
+
+You can also turn it off in **Settings → Privacy → Telemetry**. Environment
+settings override the saved choice. Local performance measurements remain
+available at `GET /api/metrics/perf`, even when telemetry is off, but nothing is
+sent from your computer.
+
+The PostHog key is added when the official npm package is built. It is not
+stored in this repository, so a build from source does not send telemetry. To
+use your own PostHog project in a source build, set `OMNITERM_POSTHOG_KEY` when
+you run omniterm.
+
+## How it works
+
+omniterm runs a Node.js web server on the computer where your projects live.
+The server connects the browser interface to standard command-line tools:
+
+- `tmux` keeps terminal sessions alive.
+- `ttyd` displays those sessions in the browser.
+- Express provides the file, workspace, settings, and plugin APIs.
+- A JSON file in your home directory stores workspace, tab, file, and layout
+  settings. No database is required.
+- Runtime plugins can add tabs, interfaces, HTTP routes, and WebSocket
+  connections. The built-in terminal uses the same plugin system.
+
+Because `tmux` owns the sessions, they are not locked inside omniterm. You can
+use `tmux attach` over SSH, and terminal work continues if the omniterm process
+stops.
+
+## Contributing
+
+See the
+[`CONTRIBUTING.md`](https://github.com/engianx/omniterm/blob/main/CONTRIBUTING.md)
+guide for development setup, repository structure, tests, and project
+conventions.
 
 ## License
 
-MIT
+[MIT](https://github.com/engianx/omniterm/blob/main/LICENSE)
