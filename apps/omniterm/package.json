@@ -18,6 +18,8 @@
     "build": "./scripts/package.sh",
     "prepack": "pnpm run build",
     "postinstall": "chmod +x bin/xdg-open 2>/dev/null || true",
+    "test": "node --test scripts/*.test.mjs && node scripts/sync-readme.mjs --check",
+    "sync-readme": "node scripts/sync-readme.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

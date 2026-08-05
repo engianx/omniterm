@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "dev": "pnpm --filter @omniterm/host dev",
+    "readme:sync": "pnpm --filter @omniterm/host sync-readme",
     "agent:verify": "tsx tests/agent/run-agent-verification.ts"
   },
   "license": "MIT",

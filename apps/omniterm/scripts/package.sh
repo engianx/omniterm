@@ -31,6 +31,9 @@ REPO_ROOT=$(cd "$APP_DIR/../.." && pwd)
 # @omniterm/core lives at packages/core.
 CORE_DIR="$REPO_ROOT/packages/core"
 
+echo "[omniterm] Syncing the package README..."
+node "$SCRIPT_DIR/sync-readme.mjs"
+
 echo "[omniterm] Building @omniterm/core..."
 (cd "$CORE_DIR" && pnpm build)
 
