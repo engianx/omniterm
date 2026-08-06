@@ -307,11 +307,12 @@ jobs:
             exit 0
           fi
           # npm already has the new version at this point; only the bump commit on
-          # main is missing. The next dispatch self-heals (it bumps from the live
-          # npm version), but to restore main's history now, an on-call engineer can
-          # push the bump commit directly:
+          # main is missing. Push it directly rather than re-dispatching: a new
+          # dispatch bumps from the LIVE npm version, so it would republish an
+          # identical build as the next patch and leave this version with no bump
+          # commit, no tag, and no release notes.
           BUMP_SHA=$(git rev-parse HEAD)
-          printf '::%s::%s\n' error "Published to npm but failed to push the bump commit to main after all retries. Recover with: git push origin ${BUMP_SHA}:main (or re-dispatch — it self-heals from the live npm version)."
+          printf '::%s::%s\n' error "Published to npm but failed to push the bump commit to main after all retries. Do NOT re-dispatch (that publishes a new version). Recover with: git push origin ${BUMP_SHA}:main, then tag and release it (see the Tag the release step)."
           exit 1
 
       # Every release carries a changelog. The repo is public and npm's version
@@ -325,32 +326,68 @@ jobs:
       # Tags are `v<version>` for the host. @omniterm/plugin-types uses the
       # `plugin-types-v<version>` prefix so two packages releasing from one repo
       # never collide on a tag name.
+      #
+      # RECOVERY IS MANUAL HERE, NOT BY RE-DISPATCH. Everything below runs after
+      # npm publish has already succeeded, so re-dispatching does NOT self-heal
+      # the way the bump-push step's message says — the version step reads the
+      # live npm version and mints the NEXT patch, republishing an identical
+      # build under a new number and leaving this one untagged forever. Each
+      # failure below prints the exact commands to finish the release by hand.
       - name: Tag the release and generate notes
+        id: release
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW: ${{ steps.versions.outputs.new }}
-          OLD: ${{ steps.versions.outputs.old }}
         run: |
           set -euo pipefail
-          if ! git tag -a "v${NEW}" -m "@omniterm/host v${NEW}" || ! git push origin "v${NEW}"; then
-            printf '::%s::%s\n' error "Published ${NEW} to npm but could not tag it. Recover with: git tag -a v${NEW} <bump-sha> -m '@omniterm/host v${NEW}' && git push origin v${NEW}"
+          TAG="v${NEW}"
+          SHA=$(git rev-parse HEAD)
+
+          # Transient GitHub 5xx must not strand a published version, so both
+          # network calls retry before giving up.
+          retry() {
+            for attempt in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "Attempt ${attempt} of 3 failed: $*"
+              sleep $((attempt * 5))
+            done
+            return 1
+          }
+
+          git tag -a "$TAG" -m "@omniterm/host v${NEW}"
+          if ! retry git push origin "$TAG"; then
+            printf '::%s::%s\n' error "Published ${NEW} to npm but could not push tag ${TAG}. Do NOT re-dispatch (that publishes a new version). Recover with: git tag -a ${TAG} ${SHA} -m '@omniterm/host v${NEW}' && git push origin ${TAG}"
             exit 1
           fi
-          # --notes-start-tag needs the previous tag to exist. Any version
-          # published before tagging began has none, so fall back to letting
-          # GitHub pick the start point rather than failing the release.
-          START_ARGS=()
-          if git rev-parse -q --verify "refs/tags/v${OLD}" > /dev/null; then
-            START_ARGS=(--notes-start-tag "v${OLD}")
+
+          # Bound the notes to the host's own tag history. Leaving the start
+          # point to GitHub is NOT a safe fallback: with no start tag it defaults
+          # to the newest release in the repo, which may be a plugin-types
+          # release, and the host changelog would then list that package's
+          # commits. So find the highest `v*` tag below this one, and if there is
+          # none, write the body from git log rather than letting GitHub guess.
+          PREV_VER=$(
+            { git tag --list 'v[0-9]*' | sed 's/^v//'; echo "$NEW"; } \
+              | grep -v '^$' | sort -V -u | grep -B1 -x "$NEW" | head -1
+          )
+          NOTES_ARGS=()
+          if [ -n "$PREV_VER" ] && [ "$PREV_VER" != "$NEW" ]; then
+            echo "Bounding notes at v${PREV_VER}"
+            NOTES_ARGS=(--generate-notes --notes-start-tag "v${PREV_VER}")
           else
-            echo "No v${OLD} tag to start from — GitHub will choose the previous release itself"
+            echo "No earlier host tag — writing notes from full history"
+            git log --pretty='- %s (%h)' "$TAG" > /tmp/release-notes.md
+            NOTES_ARGS=(--notes-file /tmp/release-notes.md)
           fi
-          if ! gh release create "v${NEW}" \
+
+          # --latest keeps the repo's "Latest release" badge on the host, which
+          # is the product users install; plugin-types releases pass --latest=false.
+          if ! retry gh release create "$TAG" \
             --title "@omniterm/host v${NEW}" \
-            --generate-notes \
-            "${START_ARGS[@]}"; then
-            printf '::%s::%s\n' error "Published and tagged ${NEW} but the GitHub release failed. Recover with: gh release create v${NEW} --title '@omniterm/host v${NEW}' --generate-notes"
+            --latest \
+            "${NOTES_ARGS[@]}"; then
+            printf '::%s::%s\n' error "Published and tagged ${NEW} but the GitHub release failed. Do NOT re-dispatch (that publishes a new version). Recover with: gh release create ${TAG} --title '@omniterm/host v${NEW}' --latest --generate-notes"
             exit 1
           fi
 
@@ -498,7 +535,10 @@ jobs:
             echo "- Version: \`${{ steps.versions.outputs.old }}\` → \`${{ steps.versions.outputs.new }}\` (auto patch bump)"
             echo "- Tarball delta: \`${{ steps.size.outputs.delta_pct }}%\` (threshold +${{ inputs.size_threshold_pct }}%)"
             echo "- Dry run: \`${{ inputs.dry_run }}\`"
-            if [ "${{ inputs.dry_run }}" != "true" ]; then
+            # Gated on the release step's own outcome, not just dry_run: a run
+            # that failed at any earlier gate creates no tag, and printing the
+            # URL anyway would advertise a 404 as a shipped release.
+            if [ "${{ steps.release.outcome }}" = "success" ]; then
               echo "- Release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.versions.outputs.new }}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
