@@ -23,8 +23,15 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Needed to push the release tag and create the GitHub release below.
+    permissions:
+      contents: write
     steps:
+      # fetch-depth: 0 brings the tags along — the release step reads the
+      # previous one to bound the generated notes.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v5
         with:
@@ -201,6 +208,46 @@ jobs:
         run: pnpm publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Changelog per npm release, same as publish-host.yml. The tag is prefixed
+      # `plugin-types-v<version>` because two packages release from this one
+      # repository and the host already owns the bare `v<version>` namespace —
+      # unprefixed tags would collide the moment both hit the same number.
+      #
+      # No bump commit to order against here: this workflow publishes the
+      # version a human already committed, so the tag goes straight on the
+      # checked-out commit.
+      - name: Tag the release and generate notes
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ steps.version.outputs.new }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TAG="plugin-types-v${NEW}"
+          if ! git tag -a "$TAG" -m "@omniterm/plugin-types v${NEW}" || ! git push origin "$TAG"; then
+            printf '::%s::%s\n' error "Published ${NEW} to npm but could not tag it. Recover with: git tag -a ${TAG} ${{ github.sha }} -m '@omniterm/plugin-types v${NEW}' && git push origin ${TAG}"
+            exit 1
+          fi
+          # Bound the notes to this package's own tag history; without it GitHub
+          # would start from the newest release of EITHER package and fold the
+          # host's commits into the plugin-types changelog.
+          PREV=$(git tag --list 'plugin-types-v*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+          START_ARGS=()
+          if [ -n "$PREV" ]; then
+            START_ARGS=(--notes-start-tag "$PREV")
+          else
+            echo "No earlier plugin-types tag — generating notes from the start of history"
+          fi
+          if ! gh release create "$TAG" \
+            --title "@omniterm/plugin-types v${NEW}" \
+            --generate-notes \
+            "${START_ARGS[@]}"; then
+            printf '::%s::%s\n' error "Published and tagged ${NEW} but the GitHub release failed. Recover with: gh release create ${TAG} --title '@omniterm/plugin-types v${NEW}' --generate-notes"
+            exit 1
+          fi
 
       - name: Step summary
         if: always()
