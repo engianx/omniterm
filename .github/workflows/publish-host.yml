@@ -8,6 +8,10 @@ name: Publish @omniterm/host
 # (This matches monots' publish-mcp.yml / publish-cli.yml.) The run refuses to
 # publish a version that already exists on npm.
 #
+# Each release is tagged `v<version>` and gets a GitHub release whose notes are
+# generated from the commits and merged PRs since the previous tag, so the
+# public repo carries a changelog per npm release.
+#
 # Required secrets:
 #   NPM_TOKEN    npm automation token with publish rights.
 #   POSTHOG_KEY  PostHog project key, baked into the bundle at build time (see
@@ -310,6 +314,46 @@ jobs:
           printf '::%s::%s\n' error "Published to npm but failed to push the bump commit to main after all retries. Recover with: git push origin ${BUMP_SHA}:main (or re-dispatch — it self-heals from the live npm version)."
           exit 1
 
+      # Every release carries a changelog. The repo is public and npm's version
+      # list is not a changelog, so tag the release and let GitHub build notes
+      # from the commits and merged PRs since the previous release tag.
+      #
+      # Ordered AFTER the bump push on purpose: the tag then lands on the commit
+      # main actually has, and a push that failed above never leaves a dangling
+      # tag pointing at a commit nobody can see.
+      #
+      # Tags are `v<version>` for the host. @omniterm/plugin-types uses the
+      # `plugin-types-v<version>` prefix so two packages releasing from one repo
+      # never collide on a tag name.
+      - name: Tag the release and generate notes
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ steps.versions.outputs.new }}
+          OLD: ${{ steps.versions.outputs.old }}
+        run: |
+          set -euo pipefail
+          if ! git tag -a "v${NEW}" -m "@omniterm/host v${NEW}" || ! git push origin "v${NEW}"; then
+            printf '::%s::%s\n' error "Published ${NEW} to npm but could not tag it. Recover with: git tag -a v${NEW} <bump-sha> -m '@omniterm/host v${NEW}' && git push origin v${NEW}"
+            exit 1
+          fi
+          # --notes-start-tag needs the previous tag to exist. Any version
+          # published before tagging began has none, so fall back to letting
+          # GitHub pick the start point rather than failing the release.
+          START_ARGS=()
+          if git rev-parse -q --verify "refs/tags/v${OLD}" > /dev/null; then
+            START_ARGS=(--notes-start-tag "v${OLD}")
+          else
+            echo "No v${OLD} tag to start from — GitHub will choose the previous release itself"
+          fi
+          if ! gh release create "v${NEW}" \
+            --title "@omniterm/host v${NEW}" \
+            --generate-notes \
+            "${START_ARGS[@]}"; then
+            printf '::%s::%s\n' error "Published and tagged ${NEW} but the GitHub release failed. Recover with: gh release create v${NEW} --title '@omniterm/host v${NEW}' --generate-notes"
+            exit 1
+          fi
+
       # Canonical quality observations. Converts the JUnit above plus the
       # hard-gate outcomes into the observation format the quality maps are
       # joined against, so a check in quality-evidence/**/quality-map.yaml can be
@@ -454,4 +498,7 @@ jobs:
             echo "- Version: \`${{ steps.versions.outputs.old }}\` → \`${{ steps.versions.outputs.new }}\` (auto patch bump)"
             echo "- Tarball delta: \`${{ steps.size.outputs.delta_pct }}%\` (threshold +${{ inputs.size_threshold_pct }}%)"
             echo "- Dry run: \`${{ inputs.dry_run }}\`"
+            if [ "${{ inputs.dry_run }}" != "true" ]; then
+              echo "- Release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.versions.outputs.new }}"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
