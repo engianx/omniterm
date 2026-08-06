@@ -3,8 +3,8 @@
 Internal workspace package powering the published [`@omniterm/host`](../../apps/omniterm) CLI.
 Exports the React shell, server bootstrap, and tab-type plugin API.
 
-> The published npm package is `@omniterm/host` (in `apps/omniterm`). For end-user
-> install + usage docs, see [`apps/omniterm/README.md`](../../apps/omniterm/README.md).
+> The published npm package is `@omniterm/host` (in `apps/omniterm`). For
+> installation and usage, see the [repository README](../../README.md).
 
 ## Library use
 
