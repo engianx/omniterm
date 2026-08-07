@@ -42,7 +42,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Run all gates but skip npm publish and the bump push (test the workflow itself)"
+        description: "Run all gates, then report the version to bump to — publishes nothing"
         type: boolean
         default: false
       size_threshold_pct:
