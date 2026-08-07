@@ -1,16 +1,32 @@
 name: Publish @omniterm/host
 
-# Publishes the omniterm CLI (apps/omniterm). The version is bumped
-# AUTOMATICALLY: the workflow reads the live @omniterm/host version from npm,
-# increments the PATCH, writes it to apps/omniterm/package.json, runs every gate,
-# publishes, then pushes the bump commit back to main. Do NOT hand-bump the host
-# version in a PR — just dispatch this workflow and it mints the next patch.
-# (This matches monots' publish-mcp.yml / publish-cli.yml.) The run refuses to
-# publish a version that already exists on npm.
+# Publishes the omniterm CLI (apps/omniterm). The version to publish is still
+# DERIVED here — live @omniterm/host version from npm, PATCH incremented — and
+# written into apps/omniterm/package.json so the built artifact carries it. But
+# this workflow NO LONGER PUSHES that bump to main. Landing it is a manual step.
+#
+# RELEASE PROCEDURE:
+#   1. Dispatch with dry_run: true. Every gate runs, nothing is published, and
+#      the step summary reports the version this release will use.
+#   2. Hand-bump apps/omniterm/package.json to that version and merge it to main
+#      through a PR, like any other change.
+#   3. Dispatch with dry_run: false. The pre-publish guard below checks main is
+#      already at that version and refuses otherwise, so a forgotten step 2 fails
+#      BEFORE anything reaches npm.
+#
+# WHY THE PUSH IS GONE. It ran after `npm publish` and pushed straight to main,
+# which the repository ruleset forbids ("Changes must be made through a pull
+# request"). 0.2.23 published to npm and then died there — no bump commit, no
+# tag, no release — and re-dispatching could not repair it, because the version
+# is derived from the live npm version and a re-run mints the NEXT patch. The
+# bypass that would have allowed the push is org-only, so it is unavailable on a
+# user-owned repo. Deriving the version but leaving the commit to a human turns
+# an irreparable post-publish failure into a pre-publish one.
 #
 # Each release is tagged `v<version>` and gets a GitHub release whose notes are
 # generated from the commits and merged PRs since the previous tag, so the
-# public repo carries a changelog per npm release.
+# public repo carries a changelog per npm release. Tag creation is unaffected by
+# the ruleset, which targets branches only.
 #
 # Required secrets:
 #   NPM_TOKEN    npm automation token with publish rights.
@@ -19,8 +35,8 @@ name: Publish @omniterm/host
 #                checkout or a fork's build has no key, so telemetry is off
 #                there. Write-only/public by design, so shipping it inside the
 #                published bundle is safe.
-# The bump commit is pushed to main with the default GITHUB_TOKEN (contents:
-# write) — omniterm's main is unprotected, so no separate release PAT is needed.
+# contents: write is still required — the release tag is pushed with the default
+# GITHUB_TOKEN.
 
 on:
   workflow_dispatch:
@@ -120,7 +136,33 @@ jobs:
             exit 1
           fi
 
-      - name: Bump apps/omniterm/package.json to NEW
+      # The bump is a manual PR now (see RELEASE PROCEDURE at the top), so on a
+      # real release main must ALREADY carry the version being published. Check
+      # it here, before the build and long before npm publish: a forgotten bump
+      # then fails while it is still free to fail, instead of publishing a
+      # version main never records.
+      #
+      # Dry runs skip the check on purpose — their whole job is to tell you which
+      # version to bump to, so main is expected to still be one behind.
+      - name: Assert main already carries NEW (real releases only)
+        if: ${{ !inputs.dry_run }}
+        working-directory: apps/omniterm
+        env:
+          NEW_VERSION: ${{ steps.versions.outputs.new }}
+        run: |
+          set -euo pipefail
+          COMMITTED=$(node -p "require('./package.json').version")
+          if [ "$COMMITTED" != "$NEW_VERSION" ]; then
+            printf '::%s::%s\n' error "main has apps/omniterm/package.json at ${COMMITTED}, but this release publishes ${NEW_VERSION}. Bump it to ${NEW_VERSION} and merge that PR to main, then re-dispatch. Nothing has been published."
+            exit 1
+          fi
+          echo "main is at ${COMMITTED}, matching the version to publish."
+
+      # Written into the runner's checkout only — never committed or pushed. On a
+      # real release the guard above already proved this is a no-op; on a dry run
+      # it is what lets the build and the --version smoke exercise the real
+      # next version.
+      - name: Set apps/omniterm/package.json to NEW (runner checkout only)
         working-directory: apps/omniterm
         env:
           NEW_VERSION: ${{ steps.versions.outputs.new }}
@@ -280,59 +322,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Commit bump and push main
-        if: ${{ !inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          git add apps/omniterm/package.json
-          git commit -m "chore(release): bump @omniterm/host to ${{ steps.versions.outputs.new }}"
-          # main can move while this job runs; rebase the bump commit onto the
-          # latest main and retry so a concurrent push doesn't fail the release.
-          for attempt in 1 2 3 4 5; do
-            if git push origin HEAD:main; then
-              echo "Pushed bump on attempt $attempt"
-              exit 0
-            fi
-            echo "Push rejected (attempt $attempt) — rebasing onto latest main and retrying"
-            sleep $((attempt * 3))
-            git pull --rebase origin main || {
-              git rebase --abort 2>/dev/null || true
-              printf '::%s::%s\n' error "Rebase onto main failed (attempt $attempt) — aborting"
-              exit 1
-            }
-          done
-          # Push once more after the final rebase so the last rebase isn't wasted.
-          if git push origin HEAD:main; then
-            echo "Pushed bump after final rebase"
-            exit 0
-          fi
-          # npm already has the new version at this point; only the bump commit on
-          # main is missing. Push it directly rather than re-dispatching: a new
-          # dispatch bumps from the LIVE npm version, so it would republish an
-          # identical build as the next patch and leave this version with no bump
-          # commit, no tag, and no release notes.
-          BUMP_SHA=$(git rev-parse HEAD)
-          printf '::%s::%s\n' error "Published to npm but failed to push the bump commit to main after all retries. Do NOT re-dispatch (that publishes a new version). Recover with: git push origin ${BUMP_SHA}:main, then tag and release it (see the Tag the release step)."
-          exit 1
-
       # Every release carries a changelog. The repo is public and npm's version
       # list is not a changelog, so tag the release and let GitHub build notes
       # from the commits and merged PRs since the previous release tag.
       #
-      # Ordered AFTER the bump push on purpose: the tag then lands on the commit
-      # main actually has, and a push that failed above never leaves a dangling
-      # tag pointing at a commit nobody can see.
+      # The tag lands on the checked-out main commit, which the guard earlier
+      # proved already carries this version — so it points at exactly the source
+      # that was built and published.
       #
       # Tags are `v<version>` for the host. @omniterm/plugin-types uses the
       # `plugin-types-v<version>` prefix so two packages releasing from one repo
-      # never collide on a tag name.
+      # never collide on a tag name. Pushing a tag is NOT blocked by the
+      # repository ruleset: that ruleset targets branches, which is why the bump
+      # push had to go and this step can stay.
       #
-      # RECOVERY IS MANUAL HERE, NOT BY RE-DISPATCH. Everything below runs after
-      # npm publish has already succeeded, so re-dispatching does NOT self-heal
-      # the way the bump-push step's message says — the version step reads the
-      # live npm version and mints the NEXT patch, republishing an identical
-      # build under a new number and leaving this one untagged forever. Each
-      # failure below prints the exact commands to finish the release by hand.
+      # RECOVERY IS MANUAL HERE, NOT BY RE-DISPATCH. This is the last step that
+      # runs after npm publish, so a failure here leaves a published version with
+      # no tag and no notes. Re-dispatching does NOT repair that — the version
+      # step reads the live npm version and mints the NEXT patch, republishing an
+      # identical build under a new number and leaving this one untagged forever.
+      # Each failure below prints the exact commands to finish it by hand.
       - name: Tag the release and generate notes
         id: release
         if: ${{ !inputs.dry_run }}
@@ -532,7 +541,10 @@ jobs:
           {
             echo "## @omniterm/host release"
             echo ""
-            echo "- Version: \`${{ steps.versions.outputs.old }}\` → \`${{ steps.versions.outputs.new }}\` (auto patch bump)"
+            echo "- Version: \`${{ steps.versions.outputs.old }}\` → \`${{ steps.versions.outputs.new }}\` (patch derived from the live npm version)"
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "- **Next step:** bump \`apps/omniterm/package.json\` to \`${{ steps.versions.outputs.new }}\` and merge it to main, then dispatch with \`dry_run: false\`."
+            fi
             echo "- Tarball delta: \`${{ steps.size.outputs.delta_pct }}%\` (threshold +${{ inputs.size_threshold_pct }}%)"
             echo "- Dry run: \`${{ inputs.dry_run }}\`"
             # Gated on the release step's own outcome, not just dry_run: a run
