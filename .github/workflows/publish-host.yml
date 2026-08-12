@@ -24,9 +24,11 @@ name: Publish @omniterm/host
 # an irreparable post-publish failure into a pre-publish one.
 #
 # Each release is tagged `v<version>` and gets a GitHub release whose notes are
-# generated from the commits and merged PRs since the previous tag, so the
-# public repo carries a changelog per npm release. Tag creation is unaffected by
-# the ruleset, which targets branches only.
+# generated from the commits and merged PRs since the previous tag. A separate
+# post-publish job assesses the exact release run and prepends the four quality
+# scores to those notes, so the public repo carries both a changelog and its
+# quality index per npm release. Tag creation is unaffected by the ruleset,
+# which targets branches only.
 #
 # Required secrets:
 #   NPM_TOKEN    npm automation token with publish rights.
@@ -55,12 +57,31 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      old_version: ${{ steps.versions.outputs.old }}
+      new_version: ${{ steps.versions.outputs.new }}
+      release_sha: ${{ steps.release_identity.outputs.sha }}
     steps:
-      - name: Checkout main
+      - name: Checkout dispatched main commit
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Assert workflow was dispatched from main
+        env:
+          DISPATCHED_REF: ${{ github.ref_name }}
+        run: |
+          if [ "$DISPATCHED_REF" != "main" ]; then
+            printf '::%s::%s\n' error "Release workflow must be dispatched from main, not ${DISPATCHED_REF}."
+            exit 1
+          fi
+
+      # Record the immutable commit actually built so observations, the release
+      # tag, and the quality index all identify the same release candidate.
+      - name: Record release identity
+        id: release_identity
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v5
         with:
@@ -176,6 +197,7 @@ jobs:
       # same variable at run time to override it. This is the only place the
       # key exists outside the PostHog project itself.
       - name: Build (full pipeline)
+        id: host_build_gate
         env:
           OMNITERM_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
         run: pnpm --filter @omniterm/host build
@@ -199,6 +221,7 @@ jobs:
           echo "Telemetry key baked into the server bundle."
 
       - name: Assert build artifacts present
+        id: build_artifacts_gate
         working-directory: apps/omniterm
         run: |
           set -euo pipefail
@@ -322,13 +345,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Every release carries a changelog. The repo is public and npm's version
-      # list is not a changelog, so tag the release and let GitHub build notes
-      # from the commits and merged PRs since the previous release tag.
-      #
       # The tag lands on the checked-out main commit, which the guard earlier
       # proved already carries this version — so it points at exactly the source
-      # that was built and published.
+      # that was built and published. The release-notes job below creates the
+      # GitHub release only after this job has uploaded canonical observations.
       #
       # Tags are `v<version>` for the host. @omniterm/plugin-types uses the
       # `plugin-types-v<version>` prefix so two packages releasing from one repo
@@ -336,25 +356,23 @@ jobs:
       # repository ruleset: that ruleset targets branches, which is why the bump
       # push had to go and this step can stay.
       #
-      # RECOVERY IS MANUAL HERE, NOT BY RE-DISPATCH. This is the last step that
-      # runs after npm publish, so a failure here leaves a published version with
-      # no tag and no notes. Re-dispatching does NOT repair that — the version
+      # RECOVERY IS MANUAL HERE, NOT BY RE-DISPATCH. A failure here leaves a
+      # published version with no tag. Re-dispatching does NOT repair that — the version
       # step reads the live npm version and mints the NEXT patch, republishing an
       # identical build under a new number and leaving this one untagged forever.
-      # Each failure below prints the exact commands to finish it by hand.
-      - name: Tag the release and generate notes
-        id: release
+      # The failure below prints the exact commands to finish it by hand.
+      - name: Tag the published release
+        id: tag
         if: ${{ !inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW: ${{ steps.versions.outputs.new }}
         run: |
           set -euo pipefail
           TAG="v${NEW}"
           SHA=$(git rev-parse HEAD)
 
-          # Transient GitHub 5xx must not strand a published version, so both
-          # network calls retry before giving up.
+          # Transient GitHub 5xx must not strand a published version, so the tag
+          # push retries before giving up.
           retry() {
             for attempt in 1 2 3; do
               if "$@"; then return 0; fi
@@ -367,36 +385,6 @@ jobs:
           git tag -a "$TAG" -m "@omniterm/host v${NEW}"
           if ! retry git push origin "$TAG"; then
             printf '::%s::%s\n' error "Published ${NEW} to npm but could not push tag ${TAG}. Do NOT re-dispatch (that publishes a new version). Recover with: git tag -a ${TAG} ${SHA} -m '@omniterm/host v${NEW}' && git push origin ${TAG}"
-            exit 1
-          fi
-
-          # Bound the notes to the host's own tag history. Leaving the start
-          # point to GitHub is NOT a safe fallback: with no start tag it defaults
-          # to the newest release in the repo, which may be a plugin-types
-          # release, and the host changelog would then list that package's
-          # commits. So find the highest `v*` tag below this one, and if there is
-          # none, write the body from git log rather than letting GitHub guess.
-          PREV_VER=$(
-            { git tag --list 'v[0-9]*' | sed 's/^v//'; echo "$NEW"; } \
-              | grep -v '^$' | sort -V -u | grep -B1 -x "$NEW" | head -1
-          )
-          NOTES_ARGS=()
-          if [ -n "$PREV_VER" ] && [ "$PREV_VER" != "$NEW" ]; then
-            echo "Bounding notes at v${PREV_VER}"
-            NOTES_ARGS=(--generate-notes --notes-start-tag "v${PREV_VER}")
-          else
-            echo "No earlier host tag — writing notes from full history"
-            git log --pretty='- %s (%h)' "$TAG" > /tmp/release-notes.md
-            NOTES_ARGS=(--notes-file /tmp/release-notes.md)
-          fi
-
-          # --latest keeps the repo's "Latest release" badge on the host, which
-          # is the product users install; plugin-types releases pass --latest=false.
-          if ! retry gh release create "$TAG" \
-            --title "@omniterm/host v${NEW}" \
-            --latest \
-            "${NOTES_ARGS[@]}"; then
-            printf '::%s::%s\n' error "Published and tagged ${NEW} but the GitHub release failed. Do NOT re-dispatch (that publishes a new version). Recover with: gh release create ${TAG} --title '@omniterm/host v${NEW}' --latest --generate-notes"
             exit 1
           fi
 
@@ -420,6 +408,10 @@ jobs:
       - name: Build canonical observations
         if: always()
         continue-on-error: true
+        env:
+          # Make the recorded revision explicitly identical to the immutable
+          # release identity used by the tag and the assessment job.
+          GITHUB_SHA: ${{ steps.release_identity.outputs.sha }}
         run: |
           set -uo pipefail
           mkdir -p /tmp/qc-observations/host/shards
@@ -441,7 +433,8 @@ jobs:
           }
 
           record_gate() {
-            local test_case="$1" outcome="$2" output="$3" status
+            local test_case="$1" outcome="$2" output="$3"
+            local evidence_path="${4:-.github/workflows/publish-host.yml}" status
             case "$outcome" in
               success)        status=pass ;;
               failure)        status=fail ;;
@@ -450,7 +443,7 @@ jobs:
               *)              status=error ;;
             esac
             if ! $QT observations record \
-              --path .github/workflows/publish-host.yml \
+              --path "$evidence_path" \
               --test-case "$test_case" \
               --status "$status" \
               --note "GitHub Actions step outcome: $outcome" \
@@ -467,6 +460,10 @@ jobs:
           convert_junit /tmp/qc-observations/host/demo-agent.junit.xml \
                         /tmp/qc-observations/host/shards/demo-agent.json
 
+          record_gate "Build (full pipeline)" \
+            "${{ steps.host_build_gate.outcome }}" \
+            /tmp/qc-observations/host/shards/host-build-gate.json \
+            apps/omniterm/scripts/package.sh
           record_gate "Typecheck (hard gate)" \
             "${{ steps.typecheck_gate.outcome }}" \
             /tmp/qc-observations/host/shards/typecheck-gate.json
@@ -476,6 +473,9 @@ jobs:
           record_gate "Assert the telemetry key was baked into the bundle" \
             "${{ steps.telemetry_key_gate.outcome }}" \
             /tmp/qc-observations/host/shards/telemetry-key-gate.json
+          record_gate "Assert build artifacts present" \
+            "${{ steps.build_artifacts_gate.outcome }}" \
+            /tmp/qc-observations/host/shards/build-artifacts-gate.json
           record_gate "Tarball size delta (strict)" \
             "${{ steps.size.outcome }}" \
             /tmp/qc-observations/host/shards/tarball-size-gate.json
@@ -547,10 +547,211 @@ jobs:
             fi
             echo "- Tarball delta: \`${{ steps.size.outputs.delta_pct }}%\` (threshold +${{ inputs.size_threshold_pct }}%)"
             echo "- Dry run: \`${{ inputs.dry_run }}\`"
-            # Gated on the release step's own outcome, not just dry_run: a run
-            # that failed at any earlier gate creates no tag, and printing the
-            # URL anyway would advertise a 404 as a shipped release.
+            if [ "${{ steps.tag.outcome }}" = "success" ]; then
+              echo "- Release tag: ${{ github.server_url }}/${{ github.repository }}/tree/v${{ steps.versions.outputs.new }}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Keep judgment separate from proof production. The publish job emits facts;
+  # this job consumes its canonical artifact, asks the deterministic engine for
+  # the four scores, and publishes those scores beside the generated changelog.
+  release-notes:
+    needs: publish
+    if: ${{ !inputs.dry_run && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout the released commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.publish.outputs.release_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      # continue-on-error, deliberately: by this point NEW is on npm and tagged,
+      # and neither can be taken back. The quality index is reporting, so it
+      # must never be what stops the release from being created — a version with
+      # no GitHub release has no changelog, leaves the "Latest release" badge
+      # behind, and cannot be repaired by re-dispatching, because the version
+      # step mints the next patch from the live npm version. The release step
+      # below renders without the index when this fails.
+      - name: Assess this release and render its quality index
+        id: quality
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.publish.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          QT="npx --yes @shiplightai/quality-tools@0.3.0"
+          ASSESSMENT=/tmp/release-quality-assessment.json
+
+          # Pin the source profile to this workflow run. Artifacts uploaded by
+          # the completed publish job are available even while this job is still
+          # running, and no older release can be selected accidentally.
+          $QT observations --help > /dev/null
+          $QT analyze \
+            --project-path "$GITHUB_WORKSPACE" \
+            --observation-set release \
+            --profile-run "publish-host=${GITHUB_RUN_ID}" \
+            --output "$ASSESSMENT"
+
+          node <<'NODE'
+          const fs = require('fs');
+          const assessmentPath = '/tmp/release-quality-assessment.json';
+          const notesPath = '/tmp/release-quality.md';
+          const doc = JSON.parse(fs.readFileSync(assessmentPath, 'utf8'));
+          const structural = doc.structural_scores || {};
+          const runtime = doc.runtime_review || {};
+          const releaseSha = process.env.RELEASE_SHA;
+          const selectedProfile = (runtime.profiles || []).find(
+            (profile) => profile.profile_id === 'publish-host',
+          );
+
+          const scores = {
+            coverage: structural.coverage_score,
+            evidence: structural.evidence_confidence_score,
+            quality: runtime.quality_score,
+            structure: structural.structure_confidence_score,
+          };
+          for (const [name, value] of Object.entries(scores)) {
+            if (!Number.isFinite(value)) {
+              throw new Error(`Assessment did not produce a numeric ${name} score.`);
+            }
+          }
+          if (runtime.execution_status !== 'valid' || runtime.resolution_status !== 'valid') {
+            throw new Error(`Assessment runtime is not valid: execution=${runtime.execution_status}, resolution=${runtime.resolution_status}`);
+          }
+          if (!selectedProfile) {
+            throw new Error('Assessment did not report the publish-host source profile.');
+          }
+          if (String(selectedProfile.run_id) !== process.env.GITHUB_RUN_ID) {
+            throw new Error(`Assessment selected run ${selectedProfile.run_id || 'none'}, expected ${process.env.GITHUB_RUN_ID}.`);
+          }
+          if (selectedProfile.commit !== releaseSha) {
+            throw new Error(`Assessment profile resolved ${selectedProfile.commit || 'no commit'}, expected ${releaseSha}.`);
+          }
+          if (runtime.resolved_commit !== releaseSha) {
+            throw new Error(`Assessment resolved ${runtime.resolved_commit || 'no commit'}, expected ${releaseSha}.`);
+          }
+
+          const repoUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
+          const runUrl = `${repoUrl}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          const shortSha = releaseSha.slice(0, 7);
+          const notes = [
+            '## Quality index',
+            '',
+            '| Score | Value |',
+            '| --- | ---: |',
+            `| Coverage | ${scores.coverage} |`,
+            `| Evidence confidence | ${scores.evidence} |`,
+            `| Quality | ${scores.quality} |`,
+            `| Structure confidence | ${scores.structure} |`,
+            '',
+            `Whole-project assessment using the \`release\` observation set for [\`${shortSha}\`](${repoUrl}/commit/${releaseSha}) in [workflow run ${process.env.GITHUB_RUN_ID}](${runUrl}).`,
+            '',
+          ].join('\n');
+          fs.writeFileSync(notesPath, notes);
+          for (const [name, value] of Object.entries(scores)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+          }
+          NODE
+
+      # always(), because the run that fails the assessment is exactly the run
+      # whose partial output someone needs in order to debug it.
+      - name: Upload release quality assessment
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-quality-index-v${{ needs.publish.outputs.new_version }}
+          path: |
+            /tmp/release-quality-assessment.json
+            /tmp/release-quality.md
+          if-no-files-found: warn
+
+      # GitHub-generated notes cannot append custom content, but `--notes`
+      # prepends it. For the first host release, construct the full body locally
+      # because GitHub would otherwise choose the newest release from the other
+      # package in this repository as its implicit start point.
+      - name: Create GitHub release with changelog and quality index
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ needs.publish.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          TAG="v${NEW}"
+
+          retry() {
+            for attempt in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "Attempt ${attempt} of 3 failed: $*"
+              sleep $((attempt * 5))
+            done
+            return 1
+          }
+
+          # The index is optional here. Its step is continue-on-error, so a
+          # broken quality toolchain costs this release its score table and
+          # nothing else.
+          if [ -s /tmp/release-quality.md ]; then
+            QUALITY_NOTES=$(< /tmp/release-quality.md)
+          else
+            QUALITY_NOTES=$'> The quality index for this release could not be produced. See the workflow run for details.\n'
+            printf '::%s::%s\n' warning "Creating release ${TAG} without a quality index; the assessment step did not produce one."
+          fi
+
+          PREV_VER=$(
+            { git tag --list 'v[0-9]*' | sed 's/^v//'; echo "$NEW"; } \
+              | grep -v '^$' | sort -V -u | grep -B1 -x "$NEW" | head -1
+          )
+          NOTES_ARGS=()
+          if [ -n "$PREV_VER" ] && [ "$PREV_VER" != "$NEW" ]; then
+            echo "Bounding notes at v${PREV_VER}"
+            NOTES_ARGS=(--generate-notes --notes-start-tag "v${PREV_VER}" --notes "$QUALITY_NOTES")
+          else
+            echo "No earlier host tag — writing notes from full history"
+            {
+              printf '%s\n' "$QUALITY_NOTES"
+              echo "## What's changed"
+              echo ""
+              git log --pretty='- %s (%h)' "$TAG"
+            } > /tmp/release-notes.md
+            NOTES_ARGS=(--notes-file /tmp/release-notes.md)
+          fi
+
+          # --latest keeps the repo's "Latest release" badge on the host, which
+          # is the product users install; plugin-types releases pass --latest=false.
+          if ! retry gh release create "$TAG" \
+            --verify-tag \
+            --title "@omniterm/host v${NEW}" \
+            --latest \
+            "${NOTES_ARGS[@]}"; then
+            printf '::%s::%s\n' error "Published and tagged ${NEW}, but the GitHub release failed. Do NOT re-dispatch. Recover from this run's release-quality-index-v${NEW} artifact and create release ${TAG} with its release-quality.md prepended to the generated notes."
+            exit 1
+          fi
+
+      - name: Release summary
+        if: always()
+        run: |
+          {
+            echo "## @omniterm/host quality index"
+            echo ""
+            if [ "${{ steps.quality.outcome }}" = "success" ]; then
+              echo "| Score | Value |"
+              echo "| --- | ---: |"
+              echo "| Coverage | ${{ steps.quality.outputs.coverage }} |"
+              echo "| Evidence confidence | ${{ steps.quality.outputs.evidence }} |"
+              echo "| Quality | ${{ steps.quality.outputs.quality }} |"
+              echo "| Structure confidence | ${{ steps.quality.outputs.structure }} |"
+            fi
             if [ "${{ steps.release.outcome }}" = "success" ]; then
-              echo "- Release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.versions.outputs.new }}"
+              echo ""
+              echo "Release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ needs.publish.outputs.new_version }}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
