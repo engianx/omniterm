@@ -9,14 +9,15 @@
 Establish the omniterm repo and extract the existing generic host + SDK into two
 scoped packages — `@omniterm/core` (SDK) and `@omniterm/host`
 (CLI app) — building cleanly and booting standalone with terminals, browser-view
-panel, and workspace/file/settings management, zero plugins. The port carries the
-behavior 1:1 except for the de-branding decided for this product: the browser
-registry env var becomes `OMNITERM_BROWSER_REGISTRY_URL` and the launch shim
-becomes `omniterm-browser`. The host originally kept a vendored Chrome DevTools
-frontend (BSD-3) for the browser-view panel's live view, as a documented
-carve-out. **Superseded:** that dependency was dropped when the repo was
-open-sourced — the panel now uses the inspected browser's own DevTools frontend
-(see spec.md FR-009).
+panel, and workspace/file/settings management, zero plugins. The browser
+registry env var is `OMNITERM_BROWSER_REGISTRY_URL` and the launch shim is
+`omniterm-browser`. The panel uses the inspected browser's own DevTools frontend
+and injects a tiny, same-origin presentation shim after that frontend loads. The
+shim feature-detects the screencast split-view API, hides the inspector sidebar
+when compatible, and otherwise leaves stock DevTools unchanged.
+The same presentation layer accepts persisted user choices: the browser panel
+renders either in the terminal flex row or in an absolute right-side overlay,
+and the shim hides the inspector or places it to the right or below the page.
 
 ## Technical Context
 
@@ -48,13 +49,10 @@ auto-set `OMNITERM_BROWSER_REGISTRY_URL`; boots with zero plugins
 
 - **I. Specification Authority** — PASS. This plan derives from `spec.md`; the
   pre-extraction code is the artifact, not the truth.
-- **II. Generic Host (No Product Coupling)** — originally PASS with one
-  documented carve-out (a content-generic vendored Chrome DevTools frontend
-  published under a vendor-scoped package name). **Superseded:** the carve-out
-  was removed rather than re-vendored — see spec.md FR-009. Now PASS with no
-  exceptions. Verified by: `@omniterm/host` and `@omniterm/core` package.json
-  declare no vendor-scoped dependency at all, and no vendor-prefixed identifiers
-  remain in shipped code.
+- **II. Generic Host (No Product Coupling)** — PASS. `@omniterm/host` and
+  `@omniterm/core` declare no vendor-scoped dependency, the browser view reuses
+  the inspected browser's frontend, and no vendor-prefixed identifiers remain
+  in shipped code.
 - **III. Clean Plugin Boundary** — N/A for 001 (no plugin loader yet; 002). 001
   must not introduce any plugin-specific import into core/host.
 - **IV. Runtime Extensibility** — N/A for 001 (002). The built-in terminal plugin
@@ -118,21 +116,32 @@ unchanged so the port is mechanical and reviewable.
 | vendor-prefixed browser shim bin | `bin/omniterm-browser.js` | rename; read new env var |
 | vendor-prefixed registry env var (buildTabEnv, tabRegistry, shim) | `OMNITERM_BROWSER_REGISTRY_URL` | rename, no alias |
 | vendor-prefixed browser-path constants / bin refs | omniterm-browser path | rename constants in `lib/paths.ts`, `sessions.ts` |
-| `apps/omniterm` vendored-DevTools dep | kept at the time; later dropped | superseded — `devtoolsBundleDir` is now unset by default, so the panel falls back to the inspected browser's own DevTools (spec.md FR-009) |
+| Chrome DevTools frontend | no packaged dependency | use the inspected browser's own frontend; keep `devtoolsBundleDir` as an operator override |
 
 ### Key transformations (beyond file copy)
 
 1. Package renames + specifier rewrites across both packages.
 2. Registry env var + shim bin rename (decided); audit that **no** vendor-prefixed
    identifier remains in shipped code (tests/comments included).
-3. Host `src/server.ts`: keep `startServer({ port, devtoolsBundleDir })` (panel
-   live view) unchanged. **Superseded:** the vendored-DevTools resolution this
-   step preserved was later deleted; `devtoolsBundleDir` is now set only from
-   `OMNITERM_DEVTOOLS_DIR` (spec.md FR-009).
+3. Host `src/server.ts`: keep `startServer({ port, devtoolsBundleDir })` as an
+   operator override. Without it, proxy the inspected browser's own DevTools
+   frontend (spec.md FR-009).
 4. Repo tooling: `pnpm-workspace.yaml`, root `tsconfig`, `.npmrc`
    (`shamefully-hoist` / hoisted linker for dependency resolution), `.nvmrc`, `.gitignore`.
    Port the per-package `tsconfig`/`tsconfig.build`/`vite.config`/`tsup.config`.
 5. Port all unit suites and wire `vitest`/`tsx --test` so they run in the new repo.
+6. Browser-view presentation: ship a small public module that is injected into
+   the proxied DevTools iframe on load. It imports the frontend's own screencast
+   module from the same proxied base URL, waits for its split view, and applies
+   `hideSidebar()` or the requested horizontal/vertical split orientation. It
+   records diagnostic state. All lookup and mutation is feature-detected;
+   failure preserves a usable stock frontend.
+7. Persist `browserPanelMode` and `browserInspectorPosition` with the existing
+   settings API. Thread them through host state into the terminal integration.
+   Docked mode keeps the view in the terminal row; overlay mode positions the
+   same resizable view above the terminal on the right. Inspector placement is
+   carried on the injected module element and remounts only the DevTools iframe
+   when changed.
 
 ## Development entry points
 

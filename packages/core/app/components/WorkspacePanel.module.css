@@ -269,6 +269,22 @@
   font-size: 12px;
 }
 
+.emptyAction {
+  display: block;
+  margin: 8px auto 0;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--accent, #58a6ff);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.emptyAction:hover {
+  background: var(--bg-secondary);
+}
+
 .emptySmall {
   padding: 4px 12px 4px 44px;
   color: var(--text-muted);

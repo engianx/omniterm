@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ResizeHandle, type DragInfo } from '../app/components/ResizeHandle';
+import type { BrowserInspectorPosition } from '../lib/settings';
 
 export interface Browser {
   id: string;
@@ -43,6 +44,20 @@ interface Props {
    *  outer layout wants to suppress hover interactions during drag. */
   onResizeStart?: () => void;
   onResizeEnd?: () => void;
+  /** DevTools inspector placement around the interactive screencast. */
+  inspectorPosition?: BrowserInspectorPosition;
+  /**
+   * How the panel sits in its parent. `inline` takes part in the parent's flex
+   * row. `overlay` floats above it, anchored to the parent's right edge.
+   *
+   * Overlay positions the panel itself rather than letting the caller wrap it,
+   * so that in both modes the panel's parent box stays the full surface it
+   * docks into or floats over. `handleResizeDrag` measures the drag limit
+   * against that box — a wrapper would shrink-wrap to the panel's own width and
+   * make the limit the current width, which turns every outward drag into a
+   * shrink.
+   */
+  presentation?: 'inline' | 'overlay';
   /**
    * Optional close handler. When provided, renders an inline [×] in the
    * tab strip. Used on mobile, where the browser view replaces the
@@ -54,6 +69,68 @@ interface Props {
 }
 
 const MIN_WIDTH = 300;
+const DEVTOOLS_SCREENCAST_SHIM_ID = 'omniterm-devtools-screencast-shim';
+const DEVTOOLS_SCREENCAST_SHIM_EVENT = 'omniterm:devtools-screencast-shim';
+/** Must match SHIM_MESSAGE_TYPE in public/devtools-screencast-shim.js. */
+const DEVTOOLS_SHIM_MESSAGE_TYPE = 'omniterm:devtools-shim';
+
+interface DevToolsScreencastShimEventDetail {
+  state?: unknown;
+  detail?: unknown;
+}
+
+/**
+ * Chrome's remote-debugging frontend renders its interactive screencast and
+ * InspectorView in a private SplitWidget, with the inspector hard-coded on the
+ * right. Load a tiny module in the iframe's own realm so it can feature-detect
+ * that internal API and apply the requested visibility/orientation. The shim is
+ * deliberately optional: if Chrome moves or removes the API, stock DevTools
+ * remains untouched.
+ *
+ * `onReady` fires when the shim reports its state, which is the point from
+ * which it listens for `postMessage` updates.
+ */
+function installDevToolsScreencastShim(
+  frame: HTMLIFrameElement,
+  inspectorPosition: BrowserInspectorPosition,
+  onReady: () => void,
+): void {
+  try {
+    const doc = frame.contentDocument;
+    if (!doc || doc.getElementById(DEVTOOLS_SCREENCAST_SHIM_ID)) return;
+
+    frame.contentWindow?.addEventListener(
+      DEVTOOLS_SCREENCAST_SHIM_EVENT,
+      (event) => {
+        onReady();
+        const payload = (event as CustomEvent<DevToolsScreencastShimEventDetail>).detail;
+        const state = typeof payload?.state === 'string' ? payload.state : 'unknown';
+        const detail = typeof payload?.detail === 'string' ? payload.detail : '';
+        frame.dataset.omnitermScreencastShimState = state;
+        frame.dataset.omnitermScreencastShimDetail = detail;
+
+        const message = `[browser-view] DevTools screencast shim: ${state}${
+          detail ? ` (${detail})` : ''
+        }`;
+        if (state === 'error') console.error(message);
+        else if (state === 'unsupported') console.warn(message);
+        else console.info(message);
+      },
+      { once: true },
+    );
+
+    const script = doc.createElement('script');
+    script.id = DEVTOOLS_SCREENCAST_SHIM_ID;
+    script.type = 'module';
+    script.src = '/devtools-screencast-shim.js';
+    script.dataset.inspectorPosition = inspectorPosition;
+    doc.head.appendChild(script);
+  } catch {
+    // The proxied frontend is expected to be same-origin. If an embedding host
+    // changes that contract, preserve the loaded frontend rather than blocking
+    // the browser view on an optional presentation enhancement.
+  }
+}
 
 /**
  * TabBrowserView — an embedded browser live-view for a single left-side tab.
@@ -65,8 +142,8 @@ const MIN_WIDTH = 300;
  * /devtools/, connected through the OmniTerm proxy (`/b/:id/browser` +
  * `/b/:id/page/:targetId`).
  *
- * No self-managed SSE or fetches — the parent is responsible for keeping
- * `browsers` current. No resize/close affordances — the parent owns layout.
+ * The parent owns layout and can provide resize/close affordances. Without an
+ * explicit width (the mobile/full-surface path), the view fills its flex parent.
  */
 export default function TabBrowserView({
   tabId,
@@ -75,12 +152,31 @@ export default function TabBrowserView({
   onWidthChange,
   onResizeStart,
   onResizeEnd,
+  inspectorPosition = 'hidden',
+  presentation = 'inline',
   onClose,
 }: Props) {
   const baseUrl = tabBaseUrl ?? `/t/${encodeURIComponent(tabId)}`;
   const containerRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const shimReadyRef = useRef(false);
   const [browsers, setBrowsers] = useState<Browser[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Talk to the loaded shim instead of reloading the frontend. Both of these
+  // are presentation-only, so a frame that never reports ready (stock DevTools
+  // moved its internals) simply keeps its startup layout.
+  const postToShim = useCallback((message: Record<string, unknown>) => {
+    if (!shimReadyRef.current) return;
+    frameRef.current?.contentWindow?.postMessage(
+      { type: DEVTOOLS_SHIM_MESSAGE_TYPE, ...message },
+      window.location.origin,
+    );
+  }, []);
+
+  useEffect(() => {
+    postToShim({ inspectorPosition });
+  }, [inspectorPosition, postToShim]);
 
   // Restored from the pre-rename BrowserPanel — drag the left edge to
   // resize. Width is owned by the parent so it can persist or sync with
@@ -208,10 +304,17 @@ export default function TabBrowserView({
 
   // Bring the selected target to the foreground so headless Chrome paints
   // it. Without this, switching to a background tab shows blank screencast.
+  //
+  // Depend on the two fields rather than `targetState`, which useTargets
+  // rebuilds as a fresh object every render. `sendCommand` is stable, so this
+  // now fires on a real selection or connection change instead of once per
+  // render — a pane-resize drag re-renders on every pointermove and used to
+  // send one activateTarget per frame down the proxied CDP socket.
+  const { connected: targetsConnected, sendCommand: sendTargetCommand } = targetState;
   useEffect(() => {
-    if (!selectedTargetId || !targetState.connected) return;
-    targetState.sendCommand('Target.activateTarget', { targetId: selectedTargetId });
-  }, [selectedTargetId, targetState]);
+    if (!selectedTargetId || !targetsConnected) return;
+    sendTargetCommand('Target.activateTarget', { targetId: selectedTargetId });
+  }, [selectedTargetId, targetsConnected, sendTargetCommand]);
 
   const wsHost = typeof window !== 'undefined' ? window.location.host : '';
   const wsScheme =
@@ -223,7 +326,10 @@ export default function TabBrowserView({
 
   const containerStyle: React.CSSProperties = {
     ...S.container,
-    ...(typeof width === 'number' ? { width: `${width}px`, flexShrink: 0 } : {}),
+    ...(typeof width === 'number'
+      ? { width: `${width}px`, flexShrink: 0 }
+      : { flex: '1 1 0%' }),
+    ...(presentation === 'overlay' ? S.overlay : {}),
   };
 
   return (
@@ -233,9 +339,18 @@ export default function TabBrowserView({
           axis="x"
           variant="edge"
           style={{ left: -3 }}
-          onStart={onResizeStart}
+          // Every screencast refit is a stop/start round trip that blanks the
+          // remote page, so hold them off for the length of the drag and let
+          // the shim fire exactly one when the pointer is released.
+          onStart={() => {
+            postToShim({ resizing: true });
+            onResizeStart?.();
+          }}
           onDrag={handleResizeDrag}
-          onEnd={onResizeEnd}
+          onEnd={() => {
+            postToShim({ resizing: false });
+            onResizeEnd?.();
+          }}
         />
       )}
       <div style={S.tabsStrip}>
@@ -296,11 +411,21 @@ export default function TabBrowserView({
             {targetState.error && <div style={S.error}>{targetState.error}</div>}
             {!targetState.error && iframeSrc && (
               <iframe
+                // Deliberately not keyed on inspectorPosition: moving the
+                // inspector is a postMessage to the loaded shim, not a reload
+                // of the whole frontend and its CDP session.
                 key={iframeSrc}
+                ref={frameRef}
                 src={iframeSrc}
                 style={S.iframe}
                 title={`DevTools for ${selected.label}`}
                 allow="clipboard-read; clipboard-write"
+                onLoad={(event) => {
+                  shimReadyRef.current = false;
+                  installDevToolsScreencastShim(event.currentTarget, inspectorPosition, () => {
+                    shimReadyRef.current = true;
+                  });
+                }}
               />
             )}
           </div>
@@ -569,6 +694,16 @@ const S: Record<string, React.CSSProperties> = {
     borderLeft: '1px solid var(--border)',
     flexShrink: 0,
     minWidth: 0,
+  },
+  // Floats over the surface instead of taking a column out of it. The parent
+  // must be `position: relative` or absolutely positioned; the terminal pane it
+  // covers stays interactive because this only spans the panel's own width.
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 50,
+    boxShadow: '-4px 0 16px rgba(0,0,0,0.5)',
   },
   chevronButton: {
     display: 'inline-flex',

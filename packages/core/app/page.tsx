@@ -12,11 +12,21 @@ import { shouldResetWorkspaceTabs } from './workspaceSelection';
 import { worktreeDeleteUrl, worktreeStatusUrl, probeIsDirty } from './worktreeDelete';
 import { initClientTelemetry, track } from './telemetryClient';
 import { MOBILE_MAX_WIDTH } from './breakpoints';
-import type { WorkspacesPanelMode, FilesPanelMode } from '../lib/settings';
+import type {
+  WorkspacesPanelMode,
+  FilesPanelMode,
+  BrowserPanelMode,
+  BrowserInspectorPosition,
+} from '../lib/settings';
 
 export type { HostApi, Tab, PluginIntegration, MainContentContext } from './types';
 export { composeIntegrations } from './types';
-export type { WorkspacesPanelMode, FilesPanelMode } from '../lib/settings';
+export type {
+  WorkspacesPanelMode,
+  FilesPanelMode,
+  BrowserPanelMode,
+  BrowserInspectorPosition,
+} from '../lib/settings';
 
 // =========================================================================
 // Host state — owned by `useHomeState`. Consumers thread this object into
@@ -71,6 +81,8 @@ export interface HomeState {
   workspacesPanelDockedOpen: boolean;
   filesPanelMode: FilesPanelMode;
   filesPanelDockedOpen: boolean;
+  browserPanelMode: BrowserPanelMode;
+  browserInspectorPosition: BrowserInspectorPosition;
   workspaceFilterActiveOnly: boolean;
   filesPanelMounted: boolean;
   filesPanelWidth: number;
@@ -86,6 +98,8 @@ export interface HomeState {
   setWorkspacesPanelDockedOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setFilesPanelMode: React.Dispatch<React.SetStateAction<FilesPanelMode>>;
   setFilesPanelDockedOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setBrowserPanelMode: React.Dispatch<React.SetStateAction<BrowserPanelMode>>;
+  setBrowserInspectorPosition: React.Dispatch<React.SetStateAction<BrowserInspectorPosition>>;
   setWorkspaceFilterActiveOnly: React.Dispatch<React.SetStateAction<boolean>>;
   setFilesPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setFilesPanelMounted: React.Dispatch<React.SetStateAction<boolean>>;
@@ -141,6 +155,9 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
   const [workspacesPanelDockedOpen, setWorkspacesPanelDockedOpen] = useState(true);
   const [filesPanelMode, setFilesPanelMode] = useState<FilesPanelMode>('docked');
   const [filesPanelDockedOpen, setFilesPanelDockedOpen] = useState(false);
+  const [browserPanelMode, setBrowserPanelMode] = useState<BrowserPanelMode>('docked');
+  const [browserInspectorPosition, setBrowserInspectorPosition] =
+    useState<BrowserInspectorPosition>('hidden');
   const [workspaceFilterActiveOnly, setWorkspaceFilterActiveOnly] = useState(false);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [filesPanelMounted, setFilesPanelMounted] = useState(false);
@@ -223,11 +240,24 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
         if (typeof data.workspacesPanelDockedOpen === 'boolean') {
           setWorkspacesPanelDockedOpen(data.workspacesPanelDockedOpen);
         }
+        if (typeof data.workspaceFilterActiveOnly === 'boolean') {
+          setWorkspaceFilterActiveOnly(data.workspaceFilterActiveOnly);
+        }
         if (data.filesPanelMode === 'overlay' || data.filesPanelMode === 'docked') {
           setFilesPanelMode(data.filesPanelMode);
         }
         if (typeof data.filesPanelDockedOpen === 'boolean') {
           setFilesPanelDockedOpen(data.filesPanelDockedOpen);
+        }
+        if (data.browserPanelMode === 'overlay' || data.browserPanelMode === 'docked') {
+          setBrowserPanelMode(data.browserPanelMode);
+        }
+        if (
+          data.browserInspectorPosition === 'hidden' ||
+          data.browserInspectorPosition === 'right' ||
+          data.browserInspectorPosition === 'bottom'
+        ) {
+          setBrowserInspectorPosition(data.browserInspectorPosition);
         }
       })
       .catch(() => {})
@@ -252,8 +282,11 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
         browserPanelOpen,
         workspacesPanelMode,
         workspacesPanelDockedOpen,
+        workspaceFilterActiveOnly,
         filesPanelMode,
         filesPanelDockedOpen,
+        browserPanelMode,
+        browserInspectorPosition,
       }),
     });
   }, [
@@ -263,8 +296,11 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     browserPanelOpen,
     workspacesPanelMode,
     workspacesPanelDockedOpen,
+    workspaceFilterActiveOnly,
     filesPanelMode,
     filesPanelDockedOpen,
+    browserPanelMode,
+    browserInspectorPosition,
   ]);
 
   const hostApi: HostApi = useMemo(
@@ -475,6 +511,8 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     workspacesPanelDockedOpen,
     filesPanelMode,
     filesPanelDockedOpen,
+    browserPanelMode,
+    browserInspectorPosition,
     workspaceFilterActiveOnly,
     filesPanelMounted,
     filesPanelWidth,
@@ -490,6 +528,8 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     setWorkspacesPanelDockedOpen,
     setFilesPanelMode,
     setFilesPanelDockedOpen,
+    setBrowserPanelMode,
+    setBrowserInspectorPosition,
     setWorkspaceFilterActiveOnly,
     setFilesPanelOpen,
     setFilesPanelMounted,
@@ -1182,6 +1222,10 @@ export default function Home(props: HomeProps) {
             onWorkspacesPanelModeChange={handleWorkspacesPanelModeChange}
             filesPanelMode={host.filesPanelMode}
             onFilesPanelModeChange={handleFilesPanelModeChange}
+            browserPanelMode={host.browserPanelMode}
+            onBrowserPanelModeChange={host.setBrowserPanelMode}
+            browserInspectorPosition={host.browserInspectorPosition}
+            onBrowserInspectorPositionChange={host.setBrowserInspectorPosition}
           />
         </div>
       )}

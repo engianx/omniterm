@@ -337,16 +337,16 @@ expectations:
         notes: "vite client (86 modules) + tsc + tsup (dist/server.js) + standalone assembly + bin shim staging."
       - id: "ci-build-artifacts-smoke"
         type: "smoke"
-        path: "UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo)"
-        test_case: "standalone-build-produces-bootable-artifacts"
+        path: ".github/workflows/publish-host.yml"
+        test_case: "Assert build artifacts present"
         command: "pnpm --filter @omniterm/host build && assert standalone/ + bin shims present"
         depth: "DIRECT"
         reliability: "STRONG"
         contexts: ["ci"]
-        notes: "The quality-observations workflow builds the host and asserts the documented standalone artifacts (server/server.js, client, public, bin shims) exist, emitting a manifest observation. Joins under the ci-observations evaluation set."
+        notes: "The host release workflow builds the package and asserts that server/server.js, client, public, and bin shims exist. Its already-determined gate outcome is emitted under this exact path + test_case and joins through the release observation set."
     proof_gap:
-      summary: "No dry-run npm publish / size-delta evidence yet; the AGENTS.md release-identity (npm account + version baseline) predates the rename and is unconfirmed for @omniterm/host."
-      next_step: "At publish time, run the AGENTS.md evidence pass against @omniterm/host and confirm the publish identity with the user."
+      summary: "The release workflow builds, asserts artifacts, packs, installs, exercises --version/--help, performs a publish dry-run, and gates tarball size; it does not start the packed standalone server and fetch the served UI."
+      next_step: "Have the proof producer add a release smoke that starts the packed standalone server and fetches the UI, then emit that already-determined outcome as canonical observations."
 
   - id: "settings-persistence"
     title: "Host/UI settings persist across restarts"

@@ -1,6 +1,6 @@
 {
-  "schema_version": "5",
-  "generated_at": "2026-08-03T16:49:22.741Z",
+  "schema_version": "6",
+  "generated_at": "2026-08-12T16:12:42.919Z",
   "project_path": "/Users/feng/Personal/omniterm",
   "project_root": "/Users/feng/Personal/omniterm",
   "observation_set_id": "release",
@@ -20,41 +20,1003 @@
     "total_check_count": 36,
     "basis": "Derived from project structure and 5 feature quality maps."
   },
+  "quality_score_availability": {
+    "status": "available"
+  },
   "runtime_review": {
-    "execution_status": "invalid",
-    "resolution_status": "invalid",
-    "observation_count": 0,
-    "evaluated_target_count": 0,
-    "evaluated_expectation_count": 0,
+    "execution_status": "valid",
+    "resolution_status": "valid",
+    "observation_count": 338,
+    "resolved_commit": "c3eb1375803bccf774030e99b2f980a12a175486",
+    "evaluated_target_count": 5,
+    "evaluated_expectation_count": 36,
+    "quality_score": 61,
+    "basis": "Runtime quality score derived from 36 evaluated expectations across 5 targets.",
     "profiles": [
       {
         "profile_id": "publish-host",
         "profile_name": "Publish @omniterm/host",
-        "status": "invalid",
-        "transport": "github-actions"
+        "status": "valid",
+        "transport": "github-actions",
+        "run_id": 31143494315,
+        "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315",
+        "commit": "c3eb1375803bccf774030e99b2f980a12a175486",
+        "branch": "main",
+        "observed_at": "2026-08-07T03:12:38.000Z"
       }
     ],
-    "execution_diagnostics": [
-      {
-        "severity": "error",
-        "code": "MISSING_OBSERVATION_SOURCE_ENV",
-        "message": "Observation source profile publish-host requires env vars that are not present: GITHUB_TOKEN."
-      }
-    ],
-    "resolution_diagnostics": [
-      {
-        "severity": "error",
-        "code": "MISSING_OBSERVATION_SOURCE_ENV",
-        "message": "Observation source profile publish-host requires env vars that are not present: GITHUB_TOKEN."
-      }
-    ],
+    "execution_diagnostics": [],
+    "resolution_diagnostics": [],
     "resolution_audit": {
-      "matched_observation_count": 0,
-      "unmatched_observation_count": 0,
+      "matched_observation_count": 338,
+      "unmatched_observation_count": 77,
       "ambiguous_observation_count": 0,
-      "unmatched_examples": [],
+      "unmatched_examples": [
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/components/repoLabels.test.ts:a repo with a unique name is labelled with just that name",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/components/repoLabels.test.ts",
+          "test_case": "a repo with a unique name is labelled with just that name",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/components/repoLabels.test.ts:same-named repos are qualified by their parent directory",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/components/repoLabels.test.ts",
+          "test_case": "same-named repos are qualified by their parent directory",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/components/repoLabels.test.ts:qualifiers widen until they actually distinguish the repos",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/components/repoLabels.test.ts",
+          "test_case": "qualifiers widen until they actually distinguish the repos",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/components/repoLabels.test.ts:collisions are grouped per name, leaving unique repos unqualified",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/components/repoLabels.test.ts",
+          "test_case": "collisions are grouped per name, leaving unique repos unqualified",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/worktreeDelete.test.ts:worktreeDeleteUrl forces only when dirty",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/worktreeDelete.test.ts",
+          "test_case": "worktreeDeleteUrl forces only when dirty",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/worktreeDelete.test.ts:worktreeDeleteUrl encodes the id so special chars do not break the URL",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/worktreeDelete.test.ts",
+          "test_case": "worktreeDeleteUrl encodes the id so special chars do not break the URL",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/worktreeDelete.test.ts:worktreeStatusUrl encodes the id like the delete URL",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/worktreeDelete.test.ts",
+          "test_case": "worktreeStatusUrl encodes the id like the delete URL",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/worktreeDelete.test.ts:probeIsDirty: explicit dirty flag from a 2xx response is honored",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/worktreeDelete.test.ts",
+          "test_case": "probeIsDirty: explicit dirty flag from a 2xx response is honored",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/app/worktreeDelete.test.ts:probeIsDirty fails safe to dirty for anything but an explicit clean signal",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/app/worktreeDelete.test.ts",
+          "test_case": "probeIsDirty fails safe to dirty for anything but an explicit clean signal",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:same-named repos in different directories get different ids",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "same-named repos in different directories get different ids",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:worktree ids are unique across repos that share a directory name",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "worktree ids are unique across repos that share a directory name",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:ids are stable across calls and insensitive to path spelling",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "ids are stable across calls and insensitive to path spelling",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:a symlinked spelling of a worktree path yields the same id as the real path",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "a symlinked spelling of a worktree path yields the same id as the real path",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:repo ids keep two tracked paths that alias one directory distinct",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "repo ids keep two tracked paths that alias one directory distinct",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:displayNameForPath keeps the tracked spelling of a symlinked repo",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "displayNameForPath keeps the tracked spelling of a symlinked repo",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:ids only use characters safe in URLs, tmux targets, and registry keys",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "ids only use characters safe in URLs, tmux targets, and registry keys",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:displayNameForPath strips a bare repo .git suffix",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "displayNameForPath strips a bare repo .git suffix",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:a bare .git directory is named after its parent, never blank",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "a bare .git directory is named after its parent, never blank",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/ids.test.ts:a worktree id computed before the directory exists is not cached",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/ids.test.ts",
+          "test_case": "a worktree id computed before the directory exists is not cached",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        },
+        {
+          "observation_id": "quality-observations:31143494315:quality-host-observations/quality-observations.json:packages/core/lib/removeRepo.test.ts:removeRepo removes clean worktrees, keeps dirty ones, and never reports the main worktree",
+          "match_status": "unmatched",
+          "status": "pass",
+          "test_file": "packages/core/lib/removeRepo.test.ts",
+          "test_case": "removeRepo removes clean worktrees, keeps dirty ones, and never reports the main worktree",
+          "source_id": "publish-host",
+          "source_label": "Publish @omniterm/host",
+          "run_url": "https://github.com/engianx/omniterm/actions/runs/31143494315"
+        }
+      ],
       "ambiguous_examples": []
     }
   },
-  "recommendations": []
+  "recommendations": [
+    {
+      "rank": 1,
+      "recommendation_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#target:001-omniterm-core:.quality/evidence/001-omniterm-core/quality-map.yaml#expectation:build-standalone-pipeline",
+      "target_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#target:001-omniterm-core",
+      "target_name": "omniterm core",
+      "expectation_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#expectation:build-standalone-pipeline",
+      "expectation_local_id": "build-standalone-pipeline",
+      "expectation_title": "Build produces a bootable standalone tarball",
+      "quality_map_path": ".quality/evidence/001-omniterm-core/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 3.2,
+      "current_score": 61,
+      "projected_score": 64,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from 2 linked proof sources.",
+      "next_action": "Have the proof producer add a release smoke that starts the packed standalone server and fetches the UI, then emit that already-determined outcome as canonical observations. Then rerun one of the linked verification commands such as `pnpm --filter @omniterm/host build` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "apps/omniterm/scripts/package.sh",
+        ".github/workflows/publish-host.yml"
+      ],
+      "verification_commands": [
+        "pnpm --filter @omniterm/host build",
+        "pnpm --filter @omniterm/host build && assert standalone/ + bin shims present"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 3.2 points, from 61/100 to 64/100.\nTarget: omniterm core\nQuality check: Build produces a bootable standalone tarball\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 001-omniterm-core - omniterm core\n\nProblem: Evidence for \"Build produces a bootable standalone tarball\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: The release workflow builds, asserts artifacts, packs, installs, exercises --version/--help, performs a publish dry-run, and gates tarball size; it does not start the packed standalone server and fetch the served UI.\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/001-omniterm-core/quality-map.yaml\n- specs/001-omniterm-core/spec.md\n- docs/prd.md\n- apps/omniterm/scripts/package.sh\n- .quality/evidence/001-omniterm-core/test-spec.md\n- specs/001-omniterm-core/plan.md\n- specs/001-omniterm-core/tasks.md\n\nQuality check:\n- .quality/evidence/001-omniterm-core/quality-map.yaml#expectation:build-standalone-pipeline\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/host build\n- pnpm --filter @omniterm/host build && assert standalone/ + bin shims present\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 2,
+      "recommendation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers:.quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:pdf-render-text-find",
+      "target_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers",
+      "target_name": "richer file viewers (image, PDF, CSV/TSV)",
+      "expectation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:pdf-render-text-find",
+      "expectation_local_id": "pdf-render-text-find",
+      "expectation_title": "PDFs render with navigable pages, selectable/copyable text, and find",
+      "quality_map_path": ".quality/evidence/005-richer-file-viewers/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 3.2,
+      "current_score": 61,
+      "projected_score": 64,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from packages/core/app/components/PdfViewer.tsx.",
+      "next_action": "Browser pass (quickstart #6–#10): multi-page render, select+copy match, find highlight/step, password/corrupt → message. Then rerun `read` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "packages/core/app/components/PdfViewer.tsx"
+      ],
+      "verification_commands": [
+        "read"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 3.2 points, from 61/100 to 64/100.\nTarget: richer file viewers (image, PDF, CSV/TSV)\nQuality check: PDFs render with navigable pages, selectable/copyable text, and find\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from packages/core/app/components/PdfViewer.tsx.\n\nFix the evidence gap in this repo.\n\nAffected feature: 005-richer-file-viewers - richer file viewers (image, PDF, CSV/TSV)\n\nProblem: Evidence for \"PDFs render with navigable pages, selectable/copyable text, and find\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: Render/select-copy/find (SC-001, SC-002) are browser behaviors not asserted by a headless test.\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml\n- specs/005-richer-file-viewers/spec.md\n- specs/005-richer-file-viewers/plan.md\n- specs/005-richer-file-viewers/data-model.md\n- specs/005-richer-file-viewers/quickstart.md\n- specs/005-richer-file-viewers/tasks.md\n\nQuality check:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:pdf-render-text-find\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- read\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 3,
+      "recommendation_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#target:001-omniterm-core:.quality/evidence/001-omniterm-core/quality-map.yaml#expectation:debrand-registry-consistency",
+      "target_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#target:001-omniterm-core",
+      "target_name": "omniterm core",
+      "expectation_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#expectation:debrand-registry-consistency",
+      "expectation_local_id": "debrand-registry-consistency",
+      "expectation_title": "Registry env var + shim de-brand is consistent end to end",
+      "quality_map_path": ".quality/evidence/001-omniterm-core/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 3.2,
+      "current_score": 61,
+      "projected_score": 64,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from packages/core.",
+      "next_action": "Update + release the downstream consumer to read OMNITERM_BROWSER_REGISTRY_URL, then live-verify the shim→panel chain (also closes browser-view-registry gap). Then rerun `grep -rniE 'vendor-prefixed identifiers' packages/core apps/omniterm  (no exclusions — the vendored-DevTools carve-out was dropped)` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "packages/core"
+      ],
+      "verification_commands": [
+        "grep -rniE 'vendor-prefixed identifiers' packages/core apps/omniterm  (no exclusions — the vendored-DevTools carve-out was dropped)"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 3.2 points, from 61/100 to 64/100.\nTarget: omniterm core\nQuality check: Registry env var + shim de-brand is consistent end to end\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from packages/core.\n\nFix the evidence gap in this repo.\n\nAffected feature: 001-omniterm-core - omniterm core\n\nProblem: Evidence for \"Registry env var + shim de-brand is consistent end to end\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: a downstream consumer CLI still reads the legacy the legacy vendor-prefixed registry variable — cross-repo, intentionally deferred to the integration phase, so browser-driving-command-in-terminal registration is not yet end-to-end on the new name.\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/001-omniterm-core/quality-map.yaml\n- specs/001-omniterm-core/spec.md\n- docs/prd.md\n- apps/omniterm/scripts/package.sh\n- .quality/evidence/001-omniterm-core/test-spec.md\n- specs/001-omniterm-core/plan.md\n- specs/001-omniterm-core/tasks.md\n\nQuality check:\n- .quality/evidence/001-omniterm-core/quality-map.yaml#expectation:debrand-registry-consistency\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- grep -rniE 'vendor-prefixed identifiers' packages/core apps/omniterm  (no exclusions — the vendored-DevTools carve-out was dropped)\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 4,
+      "recommendation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers:.quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:svg-no-script-execution",
+      "target_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers",
+      "target_name": "richer file viewers (image, PDF, CSV/TSV)",
+      "expectation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:svg-no-script-execution",
+      "expectation_local_id": "svg-no-script-execution",
+      "expectation_title": "SVGs render as inert images (no markup injection / script execution)",
+      "quality_map_path": ".quality/evidence/005-richer-file-viewers/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 3.2,
+      "current_score": 61,
+      "projected_score": 64,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from packages/core/app/components/ImageViewer.tsx.",
+      "next_action": "Browser check (quickstart #4) with an SVG containing an onload script; confirm no execution. Then rerun `read` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "packages/core/app/components/ImageViewer.tsx"
+      ],
+      "verification_commands": [
+        "read"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 3.2 points, from 61/100 to 64/100.\nTarget: richer file viewers (image, PDF, CSV/TSV)\nQuality check: SVGs render as inert images (no markup injection / script execution)\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from packages/core/app/components/ImageViewer.tsx.\n\nFix the evidence gap in this repo.\n\nAffected feature: 005-richer-file-viewers - richer file viewers (image, PDF, CSV/TSV)\n\nProblem: Evidence for \"SVGs render as inert images (no markup injection / script execution)\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: No automated test asserts a script-bearing SVG stays inert (behavioral/browser).\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml\n- specs/005-richer-file-viewers/spec.md\n- specs/005-richer-file-viewers/plan.md\n- specs/005-richer-file-viewers/data-model.md\n- specs/005-richer-file-viewers/quickstart.md\n- specs/005-richer-file-viewers/tasks.md\n\nQuality check:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:svg-no-script-execution\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- read\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 5,
+      "recommendation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers:.quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:lazy-load-entry-gate-green",
+      "target_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers",
+      "target_name": "richer file viewers (image, PDF, CSV/TSV)",
+      "expectation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:lazy-load-entry-gate-green",
+      "expectation_local_id": "lazy-load-entry-gate-green",
+      "expectation_title": "Viewer code (incl. pdf.js + its worker) is lazy and stays out of the eager entry chunk",
+      "quality_map_path": ".quality/evidence/005-richer-file-viewers/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 3.2,
+      "current_score": 61,
+      "projected_score": 64,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from apps/omniterm/scripts/package.sh.",
+      "next_action": "n/a Then rerun `pnpm --filter @omniterm/host build` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "apps/omniterm/scripts/package.sh"
+      ],
+      "verification_commands": [
+        "pnpm --filter @omniterm/host build"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 3.2 points, from 61/100 to 64/100.\nTarget: richer file viewers (image, PDF, CSV/TSV)\nQuality check: Viewer code (incl. pdf.js + its worker) is lazy and stays out of the eager entry chunk\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from apps/omniterm/scripts/package.sh.\n\nFix the evidence gap in this repo.\n\nAffected feature: 005-richer-file-viewers - richer file viewers (image, PDF, CSV/TSV)\n\nProblem: Evidence for \"Viewer code (incl. pdf.js + its worker) is lazy and stays out of the eager entry chunk\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: None material. Gate is enforced in CI on every host build. Post-merge follow-up externalized pdf.js entirely (served from node_modules at /pdfjs, runtime-loaded, not bundled), so the tarball stays ~1.3MB and the bundle-bloat guards stay green without a publish-gate size exception — see apps/omniterm/AGENTS.md 'Client Bundle Policy'.\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml\n- specs/005-richer-file-viewers/spec.md\n- specs/005-richer-file-viewers/plan.md\n- specs/005-richer-file-viewers/data-model.md\n- specs/005-richer-file-viewers/quickstart.md\n- specs/005-richer-file-viewers/tasks.md\n\nQuality check:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:lazy-load-entry-gate-green\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/host build\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 6,
+      "recommendation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input:.quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:never-paste-control-safe",
+      "target_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input",
+      "target_name": "mobile terminal input (accessory key bar + compose field)",
+      "expectation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:never-paste-control-safe",
+      "expectation_local_id": "never-paste-control-safe",
+      "expectation_title": "No injected input is ever bracket-wrapped; control bytes pass through intact",
+      "quality_map_path": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml",
+      "observed_state": "skipped",
+      "score_lift": 3.2,
+      "current_score": 61,
+      "projected_score": 64,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "The current observation run reached packages/core/plugins/terminal/lib/terminalInput.injector.test.ts, but the linked proof was skipped.",
+      "next_action": "Enable the skipped proof behind packages/core/plugins/terminal/lib/terminalInput.injector.test.ts, rerun `pnpm --filter @omniterm/core test`, and confirm the observation run records a pass.",
+      "proof_source_paths": [
+        "packages/core/plugins/terminal/lib/terminalInput.injector.test.ts"
+      ],
+      "verification_commands": [
+        "pnpm --filter @omniterm/core test"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 3.2 points, from 61/100 to 64/100.\nTarget: mobile terminal input (accessory key bar + compose field)\nQuality check: No injected input is ever bracket-wrapped; control bytes pass through intact\nCurrent runtime state: skipped\nWhy this matters: The current observation run reached packages/core/plugins/terminal/lib/terminalInput.injector.test.ts, but the linked proof was skipped.\n\nFix the evidence gap in this repo.\n\nAffected feature: 006-mobile-terminal-input - mobile terminal input (accessory key bar + compose field)\n\nProblem: Evidence for \"No injected input is ever bracket-wrapped; control bytes pass through intact\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: None material.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: None material.\n\nSource-of-truth inputs:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml\n- specs/006-mobile-terminal-input/spec.md\n- specs/006-mobile-terminal-input/research.md\n- specs/006-mobile-terminal-input/plan.md\n- specs/006-mobile-terminal-input/tasks.md\n\nQuality check:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:never-paste-control-safe\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/plugins/terminal/lib/terminalInput.injector.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 7,
+      "recommendation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform:.quality/evidence/002-plugin-platform/quality-map.yaml#expectation:terminal-initial-command",
+      "target_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform",
+      "target_name": "plugin platform",
+      "expectation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#expectation:terminal-initial-command",
+      "expectation_local_id": "terminal-initial-command",
+      "expectation_title": "A file handler can run a command in a terminal",
+      "quality_map_path": ".quality/evidence/002-plugin-platform/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 2.2,
+      "current_score": 61,
+      "projected_score": 63,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "NOT COVERED",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from linked proof sources.",
+      "next_action": "Implement terminal initial-command (tmux send-keys via the create-session route) + a run-in-terminal file handler, then test. Blocked on issue #12. Then rerun the linked proof source and confirm this quality check records a pass.",
+      "proof_source_paths": [],
+      "verification_commands": [],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 2.2 points, from 61/100 to 63/100.\nTarget: plugin platform\nQuality check: A file handler can run a command in a terminal\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 002-plugin-platform - plugin platform\n\nProblem: No proof is mapped for \"A file handler can run a command in a terminal\" (NOT COVERED).\n\nRecommended action: Add linked automated proof (unit, contract, integration, or e2e) with a passing result and map it to this check.\n\nSource-of-truth inputs:\n- .quality/evidence/002-plugin-platform/quality-map.yaml\n- specs/002-plugin-platform/spec.md\n- .quality/evidence/002-plugin-platform/test-spec.md\n- specs/002-plugin-platform/plan.md\n- specs/002-plugin-platform/tasks.md\n\nQuality check:\n- .quality/evidence/002-plugin-platform/quality-map.yaml#expectation:terminal-initial-command\n\nClosure mode: missing_evidence\n\nClosure condition on next scan: On the next scan, this check has linked automated proof with a passing result.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Leaving the check without a linked passing test path or command result.\n\nVerification checks to rerun:\n- No exact verification command or test path is mapped.\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 8,
+      "recommendation_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry:.quality/evidence/004-telemetry/quality-map.yaml#expectation:events-and-signatures-intact",
+      "target_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry",
+      "target_name": "built-in telemetry (usage + performance)",
+      "expectation_id": ".quality/evidence/004-telemetry/quality-map.yaml#expectation:events-and-signatures-intact",
+      "expectation_local_id": "events-and-signatures-intact",
+      "expectation_title": "All six instrumented events fire and no call site changed",
+      "quality_map_path": ".quality/evidence/004-telemetry/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 2.2,
+      "current_score": 61,
+      "projected_score": 63,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from packages/core.",
+      "next_action": "Post-activation: confirm the six events arrive in the PostHog project with their timing properties (SC-001). Then rerun `pnpm -r typecheck` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "packages/core"
+      ],
+      "verification_commands": [
+        "pnpm -r typecheck"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 2.2 points, from 61/100 to 63/100.\nTarget: built-in telemetry (usage + performance)\nQuality check: All six instrumented events fire and no call site changed\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from packages/core.\n\nFix the evidence gap in this repo.\n\nAffected feature: 004-telemetry - built-in telemetry (usage + performance)\n\nProblem: Evidence for \"All six instrumented events fire and no call site changed\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: Event delivery to PostHog is not asserted live (no key); capture is exercised only with the client disabled.\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/004-telemetry/quality-map.yaml\n- specs/004-telemetry/spec.md\n- packages/core/lib/telemetryConfig.ts\n- specs/004-telemetry/plan.md\n- specs/004-telemetry/tasks.md\n\nQuality check:\n- .quality/evidence/004-telemetry/quality-map.yaml#expectation:events-and-signatures-intact\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- pnpm -r typecheck\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 9,
+      "recommendation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input:.quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:collapsible-chrome-and-one-tap-focus",
+      "target_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input",
+      "target_name": "mobile terminal input (accessory key bar + compose field)",
+      "expectation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:collapsible-chrome-and-one-tap-focus",
+      "expectation_local_id": "collapsible-chrome-and-one-tap-focus",
+      "expectation_title": "Bar collapses to a launcher that persists; tapping 💬 focuses the field in one tap",
+      "quality_map_path": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml",
+      "observed_state": "unobserved",
+      "score_lift": 2.2,
+      "current_score": 61,
+      "projected_score": 63,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "MANUAL",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check has no passing runtime proof loaded from tests/agent/mobile-terminal-input/mobile-terminal-input.md.",
+      "next_action": "Device pass: confirm the soft keyboard rises on the first 💬 tap. Then rerun `tsx tests/agent/run-agent-verification.ts (smoke suite)` and confirm this quality check records a pass.",
+      "proof_source_paths": [
+        "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
+      ],
+      "verification_commands": [
+        "tsx tests/agent/run-agent-verification.ts (smoke suite)"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 2.2 points, from 61/100 to 63/100.\nTarget: mobile terminal input (accessory key bar + compose field)\nQuality check: Bar collapses to a launcher that persists; tapping 💬 focuses the field in one tap\nCurrent runtime state: unobserved\nWhy this matters: This weighted quality check has no passing runtime proof loaded from tests/agent/mobile-terminal-input/mobile-terminal-input.md.\n\nFix the evidence gap in this repo.\n\nAffected feature: 006-mobile-terminal-input - mobile terminal input (accessory key bar + compose field)\n\nProblem: Evidence for \"Bar collapses to a launcher that persists; tapping 💬 focuses the field in one tap\" is MANUAL at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: The physical on-screen keyboard rising on that one tap is iOS-only and not asserted by the emulated browser (see device_pending).\n\nRecommended action: Replace or supplement the manual-only evidence with an automated test that exercises this behavior.\n\nSource-of-truth inputs:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml\n- specs/006-mobile-terminal-input/spec.md\n- specs/006-mobile-terminal-input/research.md\n- specs/006-mobile-terminal-input/plan.md\n- specs/006-mobile-terminal-input/tasks.md\n\nQuality check:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:collapsible-chrome-and-one-tap-focus\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- tsx tests/agent/run-agent-verification.ts (smoke suite)\n- tests/agent/mobile-terminal-input/mobile-terminal-input.md\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 10,
+      "recommendation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input:.quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:mode-faithful-arrows",
+      "target_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input",
+      "target_name": "mobile terminal input (accessory key bar + compose field)",
+      "expectation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:mode-faithful-arrows",
+      "expectation_local_id": "mode-faithful-arrows",
+      "expectation_title": "Arrow keys respect application-cursor mode (DECCKM) live",
+      "quality_map_path": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from packages/core/plugins/terminal/lib/terminalInput.injector.test.ts.",
+      "next_action": "Close the missing proof coverage for packages/core/plugins/terminal/lib/terminalInput.injector.test.ts, rerun `pnpm --filter @omniterm/core test`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/plugins/terminal/lib/terminalInput.injector.test.ts"
+      ],
+      "verification_commands": [
+        "pnpm --filter @omniterm/core test"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: mobile terminal input (accessory key bar + compose field)\nQuality check: Arrow keys respect application-cursor mode (DECCKM) live\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from packages/core/plugins/terminal/lib/terminalInput.injector.test.ts.\n\nFix the evidence gap in this repo.\n\nAffected feature: 006-mobile-terminal-input - mobile terminal input (accessory key bar + compose field)\n\nProblem: Evidence for \"Arrow keys respect application-cursor mode (DECCKM) live\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: None material.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: None material.\n\nSource-of-truth inputs:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml\n- specs/006-mobile-terminal-input/spec.md\n- specs/006-mobile-terminal-input/research.md\n- specs/006-mobile-terminal-input/plan.md\n- specs/006-mobile-terminal-input/tasks.md\n\nQuality check:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:mode-faithful-arrows\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/plugins/terminal/lib/terminalInput.test.ts\n- packages/core/plugins/terminal/lib/terminalInput.injector.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 11,
+      "recommendation_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry:.quality/evidence/004-telemetry/quality-map.yaml#expectation:anonymous-no-pii",
+      "target_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry",
+      "target_name": "built-in telemetry (usage + performance)",
+      "expectation_id": ".quality/evidence/004-telemetry/quality-map.yaml#expectation:anonymous-no-pii",
+      "expectation_local_id": "anonymous-no-pii",
+      "expectation_title": "Events carry only an anonymous id and non-identifying context",
+      "quality_map_path": ".quality/evidence/004-telemetry/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from packages/core.",
+      "next_action": "Close the missing proof coverage for packages/core, rerun `review of the six track* call sites`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core"
+      ],
+      "verification_commands": [
+        "review of the six track* call sites"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: built-in telemetry (usage + performance)\nQuality check: Events carry only an anonymous id and non-identifying context\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from packages/core.\n\nFix the evidence gap in this repo.\n\nAffected feature: 004-telemetry - built-in telemetry (usage + performance)\n\nProblem: Evidence for \"Events carry only an anonymous id and non-identifying context\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: PII-absence is enforced on the context builder + reviewed at call sites, not by a runtime interceptor that scans every outgoing payload.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: PII-absence is enforced on the context builder + reviewed at call sites, not by a runtime interceptor that scans every outgoing payload.\n\nSource-of-truth inputs:\n- .quality/evidence/004-telemetry/quality-map.yaml\n- specs/004-telemetry/spec.md\n- packages/core/lib/telemetryConfig.ts\n- specs/004-telemetry/plan.md\n- specs/004-telemetry/tasks.md\n\nQuality check:\n- .quality/evidence/004-telemetry/quality-map.yaml#expectation:anonymous-no-pii\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/lib/telemetry.test.ts\n- packages/core/lib/installId.test.ts\n- review of the six track* call sites\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 12,
+      "recommendation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input:.quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:byte-correct-injection",
+      "target_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input",
+      "target_name": "mobile terminal input (accessory key bar + compose field)",
+      "expectation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:byte-correct-injection",
+      "expectation_local_id": "byte-correct-injection",
+      "expectation_title": "Every bar key and composed line delivers its exact expected bytes through the real terminal",
+      "quality_map_path": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun one of the linked verification commands such as `pnpm --filter @omniterm/core test`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/plugins/terminal/lib/terminalInput.injector.test.ts",
+        "UNAVAILABLE: browser screenshot (never tracked in git)"
+      ],
+      "verification_commands": [
+        "pnpm --filter @omniterm/core test",
+        "built client + running host at 390×844 mobile viewport, playwright-core"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: mobile terminal input (accessory key bar + compose field)\nQuality check: Every bar key and composed line delivers its exact expected bytes through the real terminal\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 006-mobile-terminal-input - mobile terminal input (accessory key bar + compose field)\n\nProblem: Evidence for \"Every bar key and composed line delivers its exact expected bytes through the real terminal\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: None material for byte correctness; verified by unit, live-terminal, and full-app integration evidence.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: None material for byte correctness; verified by unit, live-terminal, and full-app integration evidence.\n\nSource-of-truth inputs:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml\n- specs/006-mobile-terminal-input/spec.md\n- specs/006-mobile-terminal-input/research.md\n- specs/006-mobile-terminal-input/plan.md\n- specs/006-mobile-terminal-input/tasks.md\n\nQuality check:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:byte-correct-injection\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/plugins/terminal/lib/terminalInput.test.ts\n- packages/core/plugins/terminal/lib/terminalInput.injector.test.ts\n- built client + running host at 390×844 mobile viewport, playwright-core\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 13,
+      "recommendation_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#target:001-omniterm-core:.quality/evidence/001-omniterm-core/quality-map.yaml#expectation:host-boots-standalone",
+      "target_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#target:001-omniterm-core",
+      "target_name": "omniterm core",
+      "expectation_id": ".quality/evidence/001-omniterm-core/quality-map.yaml#expectation:host-boots-standalone",
+      "expectation_local_id": "host-boots-standalone",
+      "expectation_title": "Host boots standalone with zero plugins and serves the UI",
+      "quality_map_path": ".quality/evidence/001-omniterm-core/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from apps/omniterm/standalone/server/server.js.",
+      "next_action": "Close the missing proof coverage for apps/omniterm/standalone/server/server.js, rerun `PORT=17799 node standalone/server/server.js & curl --retry 15 --retry-connrefused http://127.0.0.1:17799/`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "apps/omniterm/standalone/server/server.js"
+      ],
+      "verification_commands": [
+        "PORT=17799 node standalone/server/server.js & curl --retry 15 --retry-connrefused http://127.0.0.1:17799/"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: omniterm core\nQuality check: Host boots standalone with zero plugins and serves the UI\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from apps/omniterm/standalone/server/server.js.\n\nFix the evidence gap in this repo.\n\nAffected feature: 001-omniterm-core - omniterm core\n\nProblem: Evidence for \"Host boots standalone with zero plugins and serves the UI\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: Boot + SPA-serve are proven, but interactive terminal/browser-view in a real browser are not yet exercised by an auditable agent/manual run.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: Boot + SPA-serve are proven, but interactive terminal/browser-view in a real browser are not yet exercised by an auditable agent/manual run.\n\nSource-of-truth inputs:\n- .quality/evidence/001-omniterm-core/quality-map.yaml\n- specs/001-omniterm-core/spec.md\n- docs/prd.md\n- apps/omniterm/scripts/package.sh\n- .quality/evidence/001-omniterm-core/test-spec.md\n- specs/001-omniterm-core/plan.md\n- specs/001-omniterm-core/tasks.md\n\nQuality check:\n- .quality/evidence/001-omniterm-core/quality-map.yaml#expectation:host-boots-standalone\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- PORT=17799 node standalone/server/server.js & curl --retry 15 --retry-connrefused http://127.0.0.1:17799/\n- pnpm --filter @omniterm/core test\n- packages/core/server/startServer.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 14,
+      "recommendation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform:.quality/evidence/002-plugin-platform/quality-map.yaml#expectation:manifest-driven-client",
+      "target_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform",
+      "target_name": "plugin platform",
+      "expectation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#expectation:manifest-driven-client",
+      "expectation_local_id": "manifest-driven-client",
+      "expectation_title": "Plugin tab types render from the manifest with no host-client rebuild",
+      "quality_map_path": ".quality/evidence/002-plugin-platform/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from packages/core/server/routes/manifest.ts.",
+      "next_action": "Close the missing proof coverage for packages/core/server/routes/manifest.ts, rerun `curl /api/plugins (with fixture loaded)`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/server/routes/manifest.ts"
+      ],
+      "verification_commands": [
+        "curl /api/plugins (with fixture loaded)"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: plugin platform\nQuality check: Plugin tab types render from the manifest with no host-client rebuild\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from packages/core/server/routes/manifest.ts.\n\nFix the evidence gap in this repo.\n\nAffected feature: 002-plugin-platform - plugin platform\n\nProblem: Evidence for \"Plugin tab types render from the manifest with no host-client rebuild\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: The browser-rendered [+] entry, file-handler open, and persisted-iframe behavior are not agent-verified (need a browser).\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: The browser-rendered [+] entry, file-handler open, and persisted-iframe behavior are not agent-verified (need a browser).\n\nSource-of-truth inputs:\n- .quality/evidence/002-plugin-platform/quality-map.yaml\n- specs/002-plugin-platform/spec.md\n- .quality/evidence/002-plugin-platform/test-spec.md\n- specs/002-plugin-platform/plan.md\n- specs/002-plugin-platform/tasks.md\n\nQuality check:\n- .quality/evidence/002-plugin-platform/quality-map.yaml#expectation:manifest-driven-client\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- curl /api/plugins (with fixture loaded)\n- pnpm --filter @omniterm/core test\n- packages/core/app/manifestReconcile.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 15,
+      "recommendation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform:.quality/evidence/002-plugin-platform/quality-map.yaml#expectation:clean-cut-boundary",
+      "target_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform",
+      "target_name": "plugin platform",
+      "expectation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#expectation:clean-cut-boundary",
+      "expectation_local_id": "clean-cut-boundary",
+      "expectation_title": "Plugins are deletable without breaking the host",
+      "quality_map_path": ".quality/evidence/002-plugin-platform/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo).",
+      "next_action": "Close the missing proof coverage for UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo), rerun `mv plugins/_fixture-plugin away; pnpm -r typecheck && pnpm --filter @omniterm/host build`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo)"
+      ],
+      "verification_commands": [
+        "mv plugins/_fixture-plugin away; pnpm -r typecheck && pnpm --filter @omniterm/host build"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: plugin platform\nQuality check: Plugins are deletable without breaking the host\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from UNAVAILABLE: .github/workflows/quality-observations.yml (CI observation workflow not carried into this repo).\n\nFix the evidence gap in this repo.\n\nAffected feature: 002-plugin-platform - plugin platform\n\nProblem: Evidence for \"Plugins are deletable without breaking the host\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: The static no-coupling invariant is a runtime-observable unit test, and the build-with-plugin-removed gate is now wired in CI (the quality-observations workflow removes plugins/_fixture-plugin and runs typecheck + host build, emitting a manifest observation) — pending its first CI run to join under the ci-observations evaluation set.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: The static no-coupling invariant is a runtime-observable unit test, and the build-with-plugin-removed gate is now wired in CI (the quality-observations workflow removes plugins/_fixture-plugin and runs typecheck + host build, emitting a manifest observation) — pending its first CI run to join under the ci-observations evaluation set.\n\nSource-of-truth inputs:\n- .quality/evidence/002-plugin-platform/quality-map.yaml\n- specs/002-plugin-platform/spec.md\n- .quality/evidence/002-plugin-platform/test-spec.md\n- specs/002-plugin-platform/plan.md\n- specs/002-plugin-platform/tasks.md\n\nQuality check:\n- .quality/evidence/002-plugin-platform/quality-map.yaml#expectation:clean-cut-boundary\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/clean-cut-boundary.test.ts\n- mv plugins/_fixture-plugin away; pnpm -r typecheck && pnpm --filter @omniterm/host build\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 16,
+      "recommendation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform:.quality/evidence/002-plugin-platform/quality-map.yaml#expectation:plugin-loader",
+      "target_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform",
+      "target_name": "plugin platform",
+      "expectation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#expectation:plugin-loader",
+      "expectation_local_id": "plugin-loader",
+      "expectation_title": "Plugins load at runtime by path or package name",
+      "quality_map_path": ".quality/evidence/002-plugin-platform/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from apps/omniterm/src/server.ts.",
+      "next_action": "Close the missing proof coverage for apps/omniterm/src/server.ts, rerun `node standalone/server/server.js --plugin <path> ; --plugin @omniterm/fixture-plugin`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "apps/omniterm/src/server.ts"
+      ],
+      "verification_commands": [
+        "node standalone/server/server.js --plugin <path> ; --plugin @omniterm/fixture-plugin"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: plugin platform\nQuality check: Plugins load at runtime by path or package name\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from apps/omniterm/src/server.ts.\n\nFix the evidence gap in this repo.\n\nAffected feature: 002-plugin-platform - plugin platform\n\nProblem: Evidence for \"Plugins load at runtime by path or package name\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: parse + validation are now unit-tested; only module resolution + dynamic import() (host-context, in apps/omniterm/src/server.ts) remains smoke-only.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: parse + validation are now unit-tested; only module resolution + dynamic import() (host-context, in apps/omniterm/src/server.ts) remains smoke-only.\n\nSource-of-truth inputs:\n- .quality/evidence/002-plugin-platform/quality-map.yaml\n- specs/002-plugin-platform/spec.md\n- .quality/evidence/002-plugin-platform/test-spec.md\n- specs/002-plugin-platform/plan.md\n- specs/002-plugin-platform/tasks.md\n\nQuality check:\n- .quality/evidence/002-plugin-platform/quality-map.yaml#expectation:plugin-loader\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- node standalone/server/server.js --plugin <path> ; --plugin @omniterm/fixture-plugin\n- pnpm --filter @omniterm/core test\n- packages/core/server/routes/manifest.test.ts\n- packages/core/lib/pluginLoader.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 17,
+      "recommendation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform:.quality/evidence/002-plugin-platform/quality-map.yaml#expectation:hostcontext-public-api",
+      "target_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#target:002-plugin-platform",
+      "target_name": "plugin platform",
+      "expectation_id": ".quality/evidence/002-plugin-platform/quality-map.yaml#expectation:hostcontext-public-api",
+      "expectation_local_id": "hostcontext-public-api",
+      "expectation_title": "Plugins use host services through HostContext only",
+      "quality_map_path": ".quality/evidence/002-plugin-platform/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun `GET /fixture/:id (renders host.repos() count; create confines via host.confinePath)`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "plugins/_fixture-plugin/index.js",
+        "packages/core/server/startServer.ts"
+      ],
+      "verification_commands": [
+        "GET /fixture/:id (renders host.repos() count; create confines via host.confinePath)"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: plugin platform\nQuality check: Plugins use host services through HostContext only\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 002-plugin-platform - plugin platform\n\nProblem: Evidence for \"Plugins use host services through HostContext only\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: The over-the-wire host.confinePath rejection is proven in-repo, with no dependency on any external plugin. Broader HostContext surface (repos, settings) over the wire is still only smoke-tested via the fixture.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: The over-the-wire host.confinePath rejection is proven in-repo, with no dependency on any external plugin. Broader HostContext surface (repos, settings) over the wire is still only smoke-tested via the fixture.\n\nSource-of-truth inputs:\n- .quality/evidence/002-plugin-platform/quality-map.yaml\n- specs/002-plugin-platform/spec.md\n- .quality/evidence/002-plugin-platform/test-spec.md\n- specs/002-plugin-platform/plan.md\n- specs/002-plugin-platform/tasks.md\n\nQuality check:\n- .quality/evidence/002-plugin-platform/quality-map.yaml#expectation:hostcontext-public-api\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- GET /fixture/:id (renders host.repos() count; create confines via host.confinePath)\n- pnpm --filter @omniterm/core test\n- packages/core/server/pluginConfinement.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 18,
+      "recommendation_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry:.quality/evidence/004-telemetry/quality-map.yaml#expectation:opt-out-surfaces",
+      "target_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry",
+      "target_name": "built-in telemetry (usage + performance)",
+      "expectation_id": ".quality/evidence/004-telemetry/quality-map.yaml#expectation:opt-out-surfaces",
+      "expectation_local_id": "opt-out-surfaces",
+      "expectation_title": "User can disable telemetry via CLI and Settings UI, sharing one persisted setting",
+      "quality_map_path": ".quality/evidence/004-telemetry/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun one of the linked verification commands such as `SETTINGS_DIR=/tmp/x omniterm telemetry status|off|on; DO_NOT_TRACK=1 omniterm telemetry status`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "apps/omniterm/bin/omniterm.js",
+        "packages/core/lib/settings.ts"
+      ],
+      "verification_commands": [
+        "SETTINGS_DIR=/tmp/x omniterm telemetry status|off|on; DO_NOT_TRACK=1 omniterm telemetry status",
+        "telemetryEnabled in Settings + DEFAULT_SETTINGS; telemetry.ts initTelemetry reads loadSettings().telemetryEnabled"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: built-in telemetry (usage + performance)\nQuality check: User can disable telemetry via CLI and Settings UI, sharing one persisted setting\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 004-telemetry - built-in telemetry (usage + performance)\n\nProblem: Evidence for \"User can disable telemetry via CLI and Settings UI, sharing one persisted setting\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: The Settings UI toggle is verified by typecheck + the shared-field wiring, not a browser click-through; the CLI↔settings round-trip is smoke-tested, not a checked-in automated test.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: The Settings UI toggle is verified by typecheck + the shared-field wiring, not a browser click-through; the CLI↔settings round-trip is smoke-tested, not a checked-in automated test.\n\nSource-of-truth inputs:\n- .quality/evidence/004-telemetry/quality-map.yaml\n- specs/004-telemetry/spec.md\n- packages/core/lib/telemetryConfig.ts\n- specs/004-telemetry/plan.md\n- specs/004-telemetry/tasks.md\n\nQuality check:\n- .quality/evidence/004-telemetry/quality-map.yaml#expectation:opt-out-surfaces\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- SETTINGS_DIR=/tmp/x omniterm telemetry status|off|on; DO_NOT_TRACK=1 omniterm telemetry status\n- telemetryEnabled in Settings + DEFAULT_SETTINGS; telemetry.ts initTelemetry reads loadSettings().telemetryEnabled\n- pnpm --filter @omniterm/core test\n- packages/core/lib/telemetryConfig.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 19,
+      "recommendation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers:.quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:confined-raw-delivery",
+      "target_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers",
+      "target_name": "richer file viewers (image, PDF, CSV/TSV)",
+      "expectation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:confined-raw-delivery",
+      "expectation_local_id": "confined-raw-delivery",
+      "expectation_title": "Viewers fetch bytes only through the path-confined raw route with correct content types",
+      "quality_map_path": ".quality/evidence/005-richer-file-viewers/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 1,
+      "current_score": 61,
+      "projected_score": 62,
+      "priority_weight": 3,
+      "priority": "P1",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from specs/005-richer-file-viewers/quickstart.md.",
+      "next_action": "Close the missing proof coverage for specs/005-richer-file-viewers/quickstart.md, rerun `curl -D- /api/preview/raw/<path> for png/csv/pdf`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "specs/005-richer-file-viewers/quickstart.md"
+      ],
+      "verification_commands": [
+        "curl -D- /api/preview/raw/<path> for png/csv/pdf"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 1 points, from 61/100 to 62/100.\nTarget: richer file viewers (image, PDF, CSV/TSV)\nQuality check: Viewers fetch bytes only through the path-confined raw route with correct content types\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from specs/005-richer-file-viewers/quickstart.md.\n\nFix the evidence gap in this repo.\n\nAffected feature: 005-richer-file-viewers - richer file viewers (image, PDF, CSV/TSV)\n\nProblem: Evidence for \"Viewers fetch bytes only through the path-confined raw route with correct content types\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: Content-type for .avif not directly exercised (no avif fixture); relies on Express MIME + <img> sniffing.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: Content-type for .avif not directly exercised (no avif fixture); relies on Express MIME + <img> sniffing.\n\nSource-of-truth inputs:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml\n- specs/005-richer-file-viewers/spec.md\n- specs/005-richer-file-viewers/plan.md\n- specs/005-richer-file-viewers/data-model.md\n- specs/005-richer-file-viewers/quickstart.md\n- specs/005-richer-file-viewers/tasks.md\n\nQuality check:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:confined-raw-delivery\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/lib/previewable.test.ts\n- curl -D- /api/preview/raw/<path> for png/csv/pdf\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 20,
+      "recommendation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input:.quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:mobile-gated-no-desktop-regression",
+      "target_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input",
+      "target_name": "mobile terminal input (accessory key bar + compose field)",
+      "expectation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:mobile-gated-no-desktop-regression",
+      "expectation_local_id": "mobile-gated-no-desktop-regression",
+      "expectation_title": "Chrome is mobile-only and desktop terminal input is unchanged",
+      "quality_map_path": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 0.6,
+      "current_score": 61,
+      "projected_score": 61,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "IMPLICIT",
+      "evidence_confidence": "LOW",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun one of the linked verification commands such as `read`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/plugins/terminal/integration.tsx",
+        "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
+      ],
+      "verification_commands": [
+        "read",
+        "tsx tests/agent/run-agent-verification.ts (smoke suite)"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 0.6 points, from 61/100 to 61/100.\nTarget: mobile terminal input (accessory key bar + compose field)\nQuality check: Chrome is mobile-only and desktop terminal input is unchanged\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 006-mobile-terminal-input - mobile terminal input (accessory key bar + compose field)\n\nProblem: Evidence for \"Chrome is mobile-only and desktop terminal input is unchanged\" is IMPLICIT at LOW confidence (gaps: proof_gap, no_automated). Declared proof gap: No RTL component unit test (no harness in repo); covered instead by the re-runnable mobile-viewport agent test + typecheck.\n\nRecommended action: Add automated (unit/contract/integration/e2e) proof; the current evidence is only supporting or indirect.\n\nSource-of-truth inputs:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml\n- specs/006-mobile-terminal-input/spec.md\n- specs/006-mobile-terminal-input/research.md\n- specs/006-mobile-terminal-input/plan.md\n- specs/006-mobile-terminal-input/tasks.md\n\nQuality check:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:mobile-gated-no-desktop-regression\n\nClosure mode: no_automated_proof\n\nClosure condition on next scan: On the next scan, this check has automated proof, not only manual or supporting evidence.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Refreshing or reframing the current weak, manual, or single-layer evidence without adding stronger automated proof.\n\nVerification checks to rerun:\n- read\n- pnpm -r typecheck\n- pnpm -r test\n- tsx tests/agent/run-agent-verification.ts (smoke suite)\n- tests/agent/mobile-terminal-input/mobile-terminal-input.md\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 21,
+      "recommendation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers:.quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:csv-parse-and-scale",
+      "target_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#target:005-richer-file-viewers",
+      "target_name": "richer file viewers (image, PDF, CSV/TSV)",
+      "expectation_id": ".quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:csv-parse-and-scale",
+      "expectation_local_id": "csv-parse-and-scale",
+      "expectation_title": "CSV/TSV parses correctly and stays responsive at scale, read-only",
+      "quality_map_path": ".quality/evidence/005-richer-file-viewers/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 0.6,
+      "current_score": 61,
+      "projected_score": 61,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from packages/core/app/components/CsvViewer.tsx.",
+      "next_action": "Close the missing proof coverage for packages/core/app/components/CsvViewer.tsx, rerun `read`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/app/components/CsvViewer.tsx"
+      ],
+      "verification_commands": [
+        "read"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 0.6 points, from 61/100 to 61/100.\nTarget: richer file viewers (image, PDF, CSV/TSV)\nQuality check: CSV/TSV parses correctly and stays responsive at scale, read-only\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from packages/core/app/components/CsvViewer.tsx.\n\nFix the evidence gap in this repo.\n\nAffected feature: 005-richer-file-viewers - richer file viewers (image, PDF, CSV/TSV)\n\nProblem: Evidence for \"CSV/TSV parses correctly and stays responsive at scale, read-only\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: 100k-row smooth-scroll (SC-003) not measured under automation.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: 100k-row smooth-scroll (SC-003) not measured under automation.\n\nSource-of-truth inputs:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml\n- specs/005-richer-file-viewers/spec.md\n- specs/005-richer-file-viewers/plan.md\n- specs/005-richer-file-viewers/data-model.md\n- specs/005-richer-file-viewers/quickstart.md\n- specs/005-richer-file-viewers/tasks.md\n\nQuality check:\n- .quality/evidence/005-richer-file-viewers/quality-map.yaml#expectation:csv-parse-and-scale\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/app/components/csv-parse.test.ts\n- read\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 22,
+      "recommendation_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry:.quality/evidence/004-telemetry/quality-map.yaml#expectation:frontend-telemetry",
+      "target_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry",
+      "target_name": "built-in telemetry (usage + performance)",
+      "expectation_id": ".quality/evidence/004-telemetry/quality-map.yaml#expectation:frontend-telemetry",
+      "expectation_local_id": "frontend-telemetry",
+      "expectation_title": "Curated front-end events + key perf metrics, same opt-out, no PII",
+      "quality_map_path": ".quality/evidence/004-telemetry/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 0.6,
+      "current_score": 61,
+      "projected_score": 61,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun one of the linked verification commands such as `initTelemetry (clean env) -> getClientTelemetryConfig(); GET /api/telemetry`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/server/startServer.ts",
+        "apps/omniterm/standalone"
+      ],
+      "verification_commands": [
+        "initTelemetry (clean env) -> getClientTelemetryConfig(); GET /api/telemetry",
+        "no posthog chunk in client assets; tarball delta vs 0.2.12"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 0.6 points, from 61/100 to 61/100.\nTarget: built-in telemetry (usage + performance)\nQuality check: Curated front-end events + key perf metrics, same opt-out, no PII\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 004-telemetry - built-in telemetry (usage + performance)\n\nProblem: Evidence for \"Curated front-end events + key perf metrics, same opt-out, no PII\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: Client events (app_loaded/terminal_rendered) not yet observed landing in PostHog — needs a real browser run (no headless E2E here). Enabling telemetry at runtime takes effect on restart (client + server gate resolve at boot); opting OUT is live (Settings hint + code document this).\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: Client events (app_loaded/terminal_rendered) not yet observed landing in PostHog — needs a real browser run (no headless E2E here). Enabling telemetry at runtime takes effect on restart (client + server gate resolve at boot); opting OUT is live (Settings hint + code document this).\n\nSource-of-truth inputs:\n- .quality/evidence/004-telemetry/quality-map.yaml\n- specs/004-telemetry/spec.md\n- packages/core/lib/telemetryConfig.ts\n- specs/004-telemetry/plan.md\n- specs/004-telemetry/tasks.md\n\nQuality check:\n- .quality/evidence/004-telemetry/quality-map.yaml#expectation:frontend-telemetry\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- initTelemetry (clean env) -> getClientTelemetryConfig(); GET /api/telemetry\n- no posthog chunk in client assets; tarball delta vs 0.2.12\n- pnpm --filter @omniterm/core test\n- packages/core/app/telemetryClient.test.ts\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 23,
+      "recommendation_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry:.quality/evidence/004-telemetry/quality-map.yaml#expectation:local-perf-independent",
+      "target_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry",
+      "target_name": "built-in telemetry (usage + performance)",
+      "expectation_id": ".quality/evidence/004-telemetry/quality-map.yaml#expectation:local-perf-independent",
+      "expectation_local_id": "local-perf-independent",
+      "expectation_title": "Local performance metrics work regardless of opt-out",
+      "quality_map_path": ".quality/evidence/004-telemetry/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 0.6,
+      "current_score": 61,
+      "projected_score": 61,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from packages/core/server/startServer.ts.",
+      "next_action": "Close the missing proof coverage for packages/core/server/startServer.ts, rerun `grep /api/metrics/perf`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/server/startServer.ts"
+      ],
+      "verification_commands": [
+        "grep /api/metrics/perf"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 0.6 points, from 61/100 to 61/100.\nTarget: built-in telemetry (usage + performance)\nQuality check: Local performance metrics work regardless of opt-out\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from packages/core/server/startServer.ts.\n\nFix the evidence gap in this repo.\n\nAffected feature: 004-telemetry - built-in telemetry (usage + performance)\n\nProblem: Evidence for \"Local performance metrics work regardless of opt-out\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: The HTTP endpoint is asserted statically, not via a live request test.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: The HTTP endpoint is asserted statically, not via a live request test.\n\nSource-of-truth inputs:\n- .quality/evidence/004-telemetry/quality-map.yaml\n- specs/004-telemetry/spec.md\n- packages/core/lib/telemetryConfig.ts\n- specs/004-telemetry/plan.md\n- specs/004-telemetry/tasks.md\n\nQuality check:\n- .quality/evidence/004-telemetry/quality-map.yaml#expectation:local-perf-independent\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/lib/perfBuffer.test.ts\n- packages/core/lib/telemetry.test.ts\n- grep /api/metrics/perf\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 24,
+      "recommendation_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry:.quality/evidence/004-telemetry/quality-map.yaml#expectation:active-by-default-posthog-external",
+      "target_id": ".quality/evidence/004-telemetry/quality-map.yaml#target:004-telemetry",
+      "target_name": "built-in telemetry (usage + performance)",
+      "expectation_id": ".quality/evidence/004-telemetry/quality-map.yaml#expectation:active-by-default-posthog-external",
+      "expectation_local_id": "active-by-default-posthog-external",
+      "expectation_title": "Telemetry is active by default; posthog-node is an external runtime dep",
+      "quality_map_path": ".quality/evidence/004-telemetry/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 0.6,
+      "current_score": 61,
+      "projected_score": 61,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun one of the linked verification commands such as `grep getLibraryId (0) + posthog-node in apps/omniterm/package.json dependencies`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "apps/omniterm/standalone/server/server.js",
+        "packages/core/lib/telemetry.ts"
+      ],
+      "verification_commands": [
+        "grep getLibraryId (0) + posthog-node in apps/omniterm/package.json dependencies",
+        "manual E2E: initTelemetry + trackServerStarted/trackSessionCreated + shutdownTelemetry flush; client.captureImmediate against us.i.posthog.com"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 0.6 points, from 61/100 to 61/100.\nTarget: built-in telemetry (usage + performance)\nQuality check: Telemetry is active by default; posthog-node is an external runtime dep\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 004-telemetry - built-in telemetry (usage + performance)\n\nProblem: Evidence for \"Telemetry is active by default; posthog-node is an external runtime dep\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: E2E ran from a dev machine against the real endpoint, not from the published tarball; SC-002 is construction-level (no client built) rather than a packet-capture.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: E2E ran from a dev machine against the real endpoint, not from the published tarball; SC-002 is construction-level (no client built) rather than a packet-capture.\n\nSource-of-truth inputs:\n- .quality/evidence/004-telemetry/quality-map.yaml\n- specs/004-telemetry/spec.md\n- packages/core/lib/telemetryConfig.ts\n- specs/004-telemetry/plan.md\n- specs/004-telemetry/tasks.md\n\nQuality check:\n- .quality/evidence/004-telemetry/quality-map.yaml#expectation:active-by-default-posthog-external\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- grep getLibraryId (0) + posthog-node in apps/omniterm/package.json dependencies\n- pnpm --filter @omniterm/core test\n- packages/core/lib/telemetryConfig.test.ts\n- manual E2E: initTelemetry + trackServerStarted/trackSessionCreated + shutdownTelemetry flush; client.captureImmediate against us.i.posthog.com\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    },
+    {
+      "rank": 25,
+      "recommendation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input:.quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:sticky-ctrl-state",
+      "target_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#target:006-mobile-terminal-input",
+      "target_name": "mobile terminal input (accessory key bar + compose field)",
+      "expectation_id": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:sticky-ctrl-state",
+      "expectation_local_id": "sticky-ctrl-state",
+      "expectation_title": "The sticky Ctrl modifier arms/consumes/clears deterministically",
+      "quality_map_path": ".quality/evidence/006-mobile-terminal-input/quality-map.yaml",
+      "observed_state": "partial",
+      "score_lift": 0.6,
+      "current_score": 61,
+      "projected_score": 61,
+      "priority_weight": 2,
+      "priority": "P2",
+      "structural_status": "PARTIAL",
+      "evidence_confidence": "MEDIUM",
+      "structure_confidence": "MEDIUM",
+      "structure_provenance": "agent_generated",
+      "reason": "This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.",
+      "next_action": "Close the missing proof coverage for 2 linked proof sources, rerun one of the linked verification commands such as `read`, and bring every linked evidence record to pass.",
+      "proof_source_paths": [
+        "packages/core/plugins/terminal/components/MobileInputChrome.tsx",
+        "tests/agent/mobile-terminal-input/mobile-terminal-input.md"
+      ],
+      "verification_commands": [
+        "read",
+        "tsx tests/agent/run-agent-verification.ts (smoke suite)"
+      ],
+      "prompt_source": "canonical",
+      "prompt": "Priority recommendation: raise the current runtime quality score by about 0.6 points, from 61/100 to 61/100.\nTarget: mobile terminal input (accessory key bar + compose field)\nQuality check: The sticky Ctrl modifier arms/consumes/clears deterministically\nCurrent runtime state: partial\nWhy this matters: This weighted quality check only has partial runtime proof coverage from 2 linked proof sources.\n\nFix the evidence gap in this repo.\n\nAffected feature: 006-mobile-terminal-input - mobile terminal input (accessory key bar + compose field)\n\nProblem: Evidence for \"The sticky Ctrl modifier arms/consumes/clears deterministically\" is PARTIAL at MEDIUM confidence (gaps: proof_gap). Declared proof gap: None material — the armed-strip interaction + disarm are exercised by the re-runnable agent test; clear-on-blur remains code-reviewed only.\n\nRecommended action: Close the declared proof gap, then map the resulting passing proof: None material — the armed-strip interaction + disarm are exercised by the re-runnable agent test; clear-on-blur remains code-reviewed only.\n\nSource-of-truth inputs:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml\n- specs/006-mobile-terminal-input/spec.md\n- specs/006-mobile-terminal-input/research.md\n- specs/006-mobile-terminal-input/plan.md\n- specs/006-mobile-terminal-input/tasks.md\n\nQuality check:\n- .quality/evidence/006-mobile-terminal-input/quality-map.yaml#expectation:sticky-ctrl-state\n\nClosure mode: proof_gap\n\nClosure condition on next scan: On the next scan, the declared proof gap is closed and no residual risk remains open.\n\nChanges that do not count as success by themselves:\n- Editing quality-map.yaml, test-spec.md, or test-report.md without changing the underlying proof.\n- Rewording the evidence description so it reads as stronger without adding proof.\n- Marking the residual risk resolved without adding the missing proof.\n\nVerification checks to rerun:\n- pnpm --filter @omniterm/core test\n- packages/core/plugins/terminal/lib/terminalInput.test.ts\n- read\n- tsx tests/agent/run-agent-verification.ts (smoke suite)\n- tests/agent/mobile-terminal-input/mobile-terminal-input.md\n\nTask:\nClose the evidence gap in the smallest correct way. Establish the concrete root cause from the source-of-truth inputs, change implementation only when the inputs prove a product defect, add or update regression/manual evidence when needed, rerun the verification checks, and treat this task as complete only if the next scan stops reporting this quality check as open."
+    }
+  ]
 }

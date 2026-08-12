@@ -18,6 +18,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { HostApi, MainContentContext, PluginIntegration, Tab } from '../../app/types';
 import { track } from '../../app/telemetryClient';
 import TabBrowserView from '../../browserRegistry/TabBrowserView';
+import type { BrowserInspectorPosition, BrowserPanelMode } from '../../lib/settings';
 import TerminalView from './components/TerminalView';
 import MobileInputChrome from './components/MobileInputChrome';
 import {
@@ -57,6 +58,10 @@ export interface UseTerminalIntegrationArgs {
   /** Setter for the top-bar toggle, used to dismiss the mobile fullscreen
    *  browser pane via its own [×] button. */
   setBrowserPanelOpen: Dispatch<SetStateAction<boolean>>;
+  /** Wide-viewport browser presentation. Mobile always uses fullscreen. */
+  browserPanelMode: BrowserPanelMode;
+  /** Placement of Chrome DevTools' inspector around the screencast. */
+  browserInspectorPosition: BrowserInspectorPosition;
   /** Mobile-narrow layout flag. Drives the fullscreen-replacement mode
    *  for the browser pane. */
   isMobile: boolean;
@@ -93,6 +98,8 @@ export function useTerminalIntegration(
     ephemeralTabTypes,
     browserPanelOpen,
     setBrowserPanelOpen,
+    browserPanelMode,
+    browserInspectorPosition,
     isMobile,
     filesPanelOpen,
     settingsHydrated,
@@ -626,7 +633,13 @@ export function useTerminalIntegration(
       // Mobile + browser-pane toggled on → fullscreen TabBrowserView. The
       // top-bar toggle is hidden in mobile, so the view exposes its own [×].
       if (isMobile && ctx.browserPanelOpen && !filesPanelOpen) {
-        return <TabBrowserView tabId={tab.id} onClose={() => setBrowserPanelOpen(false)} />;
+        return (
+          <TabBrowserView
+            tabId={tab.id}
+            inspectorPosition={browserInspectorPosition}
+            onClose={() => setBrowserPanelOpen(false)}
+          />
+        );
       }
 
       // Terminal panes render in iframeTabsLayer so their ttyd iframes stay
@@ -634,7 +647,7 @@ export function useTerminalIntegration(
       // layer own the normal desktop terminal surface.
       return null;
     },
-    [isMobile, filesPanelOpen, setBrowserPanelOpen],
+    [isMobile, filesPanelOpen, setBrowserPanelOpen, browserInspectorPosition],
   );
 
   // Backs the mobile key bar / compose field. Each terminal iframe registers
@@ -761,6 +774,22 @@ export function useTerminalIntegration(
                   const session = entry.data.sessions[tab.id];
                   const showSidePane =
                     entry.visible && isActiveTab && browserPanelOpen && !isMobile;
+                  const browserView = showSidePane ? (
+                    <TabBrowserView
+                      tabId={tab.id}
+                      width={browserPaneWidth}
+                      inspectorPosition={browserInspectorPosition}
+                      presentation={browserPanelMode === 'overlay' ? 'overlay' : 'inline'}
+                      onWidthChange={setBrowserPaneWidth}
+                      onResizeStart={() => setIsResizingBrowser(true)}
+                      onResizeEnd={() => setIsResizingBrowser(false)}
+                      onClose={
+                        browserPanelMode === 'overlay'
+                          ? () => setBrowserPanelOpen(false)
+                          : undefined
+                      }
+                    />
+                  ) : null;
 
                   return (
                     <div
@@ -802,15 +831,13 @@ export function useTerminalIntegration(
                           </div>
                         )}
                       </div>
-                      {showSidePane && (
-                        <TabBrowserView
-                          tabId={tab.id}
-                          width={browserPaneWidth}
-                          onWidthChange={setBrowserPaneWidth}
-                          onResizeStart={() => setIsResizingBrowser(true)}
-                          onResizeEnd={() => setIsResizingBrowser(false)}
-                        />
-                      )}
+                      {/* Both modes render the panel as a direct child of this
+                          absolutely-positioned tab surface. Overlay mode floats
+                          it via its own `presentation` prop rather than a
+                          wrapper, so the panel's parent box is the surface in
+                          both cases — which is what its left-edge resize handle
+                          measures the drag limit against. */}
+                      {browserView}
                     </div>
                   );
                 })}
@@ -838,11 +865,14 @@ export function useTerminalIntegration(
       activePath,
       isMobile,
       browserPanelOpen,
+      browserPanelMode,
+      browserInspectorPosition,
       filesPanelOpen,
       isResizingBrowser,
       browserPaneWidth,
       setBrowserPaneWidth,
       setIsResizingBrowser,
+      setBrowserPanelOpen,
       iframeRefFor,
       resolveTerminalWindow,
     ],

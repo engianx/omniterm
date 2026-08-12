@@ -4,11 +4,57 @@ import { useState, useEffect, useCallback } from 'react';
 import { track, setClientTelemetryEnabled } from '../telemetryClient';
 import TopBar, { topBarActionStyle } from './TopBar';
 import { ResizeHandle, type DragInfo } from './ResizeHandle';
-import type { WorkspacesPanelMode, FilesPanelMode } from '../../lib/settings';
+import type {
+  WorkspacesPanelMode,
+  FilesPanelMode,
+  BrowserPanelMode,
+  BrowserInspectorPosition,
+} from '../../lib/settings';
 
 // Lower bound for the resizable overlay width. The body lays out as
 // label/control rows, so anything narrower than this starts to crowd.
 const MIN_WIDTH = 320;
+
+const PANEL_MODES = ['docked', 'overlay'] as const;
+const INSPECTOR_POSITIONS = ['hidden', 'right', 'bottom'] as const;
+
+/**
+ * One label/control row of mutually exclusive options. Four settings share this
+ * shape, so the markup — and any future change to it, such as real arrow-key
+ * navigation — lives in one place.
+ */
+function ModeRadioGroup<T extends string>({
+  label,
+  ariaLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div style={S.row}>
+      <label style={S.label}>{label}</label>
+      <div style={S.control} role="radiogroup" aria-label={ariaLabel}>
+        {options.map((option) => (
+          <button
+            key={option}
+            role="radio"
+            aria-checked={value === option}
+            style={{ ...S.shellBtn, ...(value === option ? S.shellBtnActive : {}) }}
+            onClick={() => onChange(option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // terminalRenderer is intentionally absent: it has no UI control, and the
 // server's shallow-merge save preserves any persisted value (incl. a manually
@@ -39,6 +85,11 @@ interface Props {
   /** Files-panel display mode. Same live-apply pattern as workspaces. */
   filesPanelMode: FilesPanelMode;
   onFilesPanelModeChange: (mode: FilesPanelMode) => void;
+  /** Browser-view display and inspector placement. Both apply live. */
+  browserPanelMode: BrowserPanelMode;
+  onBrowserPanelModeChange: (mode: BrowserPanelMode) => void;
+  browserInspectorPosition: BrowserInspectorPosition;
+  onBrowserInspectorPositionChange: (position: BrowserInspectorPosition) => void;
 }
 
 export default function SettingsPanel({
@@ -52,6 +103,10 @@ export default function SettingsPanel({
   onWorkspacesPanelModeChange,
   filesPanelMode,
   onFilesPanelModeChange,
+  browserPanelMode,
+  onBrowserPanelModeChange,
+  browserInspectorPosition,
+  onBrowserInspectorPositionChange,
 }: Props) {
   const [settings, setSettings] = useState<Settings>({
     terminalFontSize: 18,
@@ -207,25 +262,13 @@ export default function SettingsPanel({
         <div style={S.sectionDivider} />
 
         <div style={S.sectionHeader}>Workspaces Panel</div>
-        <div style={S.row}>
-          <label style={S.label}>Display Mode</label>
-          <div style={S.control} role="radiogroup" aria-label="Workspaces panel display mode">
-            {(['docked', 'overlay'] as const).map((mode) => (
-              <button
-                key={mode}
-                role="radio"
-                aria-checked={workspacesPanelMode === mode}
-                style={{
-                  ...S.shellBtn,
-                  ...(workspacesPanelMode === mode ? S.shellBtnActive : {}),
-                }}
-                onClick={() => onWorkspacesPanelModeChange(mode)}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ModeRadioGroup
+          label="Display Mode"
+          ariaLabel="Workspaces panel display mode"
+          options={PANEL_MODES}
+          value={workspacesPanelMode}
+          onChange={onWorkspacesPanelModeChange}
+        />
         <div style={S.hint}>
           Docked pins the panel as a permanent left sidebar. Overlay floats it over the terminal.
           Narrow viewports always use overlay regardless of this setting.
@@ -234,29 +277,40 @@ export default function SettingsPanel({
         <div style={S.sectionDivider} />
 
         <div style={S.sectionHeader}>Files Panel</div>
-        <div style={S.row}>
-          <label style={S.label}>Display Mode</label>
-          <div style={S.control} role="radiogroup" aria-label="Files panel display mode">
-            {(['docked', 'overlay'] as const).map((mode) => (
-              <button
-                key={mode}
-                role="radio"
-                aria-checked={filesPanelMode === mode}
-                style={{
-                  ...S.shellBtn,
-                  ...(filesPanelMode === mode ? S.shellBtnActive : {}),
-                }}
-                onClick={() => onFilesPanelModeChange(mode)}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ModeRadioGroup
+          label="Display Mode"
+          ariaLabel="Files panel display mode"
+          options={PANEL_MODES}
+          value={filesPanelMode}
+          onChange={onFilesPanelModeChange}
+        />
         <div style={S.hint}>
           Docked pins the panel as a permanent right sidebar (auto-narrows to the file tree when
           no files are open). Overlay floats it over the terminal. Narrow viewports always use
           overlay.
+        </div>
+
+        <div style={S.sectionDivider} />
+
+        <div style={S.sectionHeader}>Browser View</div>
+        <ModeRadioGroup
+          label="Display Mode"
+          ariaLabel="Browser view display mode"
+          options={PANEL_MODES}
+          value={browserPanelMode}
+          onChange={onBrowserPanelModeChange}
+        />
+        <ModeRadioGroup
+          label="Inspector"
+          ariaLabel="Browser inspector placement"
+          options={INSPECTOR_POSITIONS}
+          value={browserInspectorPosition}
+          onChange={onBrowserInspectorPositionChange}
+        />
+        <div style={S.hint}>
+          Docked shares space with the terminal; overlay floats above it. The inspector can be
+          hidden or placed to the right or below the page. Narrow viewports always use the
+          full-screen browser view.
         </div>
 
         <div style={S.sectionDivider} />

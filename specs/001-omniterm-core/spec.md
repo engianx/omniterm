@@ -41,7 +41,10 @@ intact.
 
 A developer runs a command in a terminal that launches a browser (e.g. a test
 run). The live browser appears in a side panel without any manual wiring, and the
-developer can inspect it.
+developer can choose whether the browser is docked beside or overlaid on the
+terminal. The developer can hide the DevTools inspector or place it to the right
+or below the interactive page. Stock DevTools remains the compatibility
+fallback.
 
 **Why this priority**: The browser-view panel is the host's second
 differentiator and is what makes terminal-driven browser work observable. It
@@ -59,6 +62,21 @@ its DevTools view is reachable through the host.
    drops it within the liveness sweep interval.
 3. **Given** two terminal tabs each with their own browser, **When** the user
    views a tab, **Then** only that tab's browser(s) are shown (tab-scoped).
+4. **Given** Chrome's proxied DevTools frontend exposes the screencast split-view
+   API and the inspector setting is `hidden`, **When** the browser view loads,
+   **Then** the interactive screencast fills the view and the inspector is hidden.
+5. **Given** a DevTools frontend that does not expose the expected internal API,
+   **When** the browser view loads, **Then** the shim makes no structural changes
+   and the stock DevTools view remains usable.
+6. **Given** a wide viewport, **When** the user selects `docked` or `overlay` for
+   the browser panel, **Then** an open browser view respectively consumes layout
+   space beside the terminal or floats above it without shrinking the terminal.
+7. **Given** an open browser view, **When** the user selects inspector placement
+   `hidden`, `right`, or `bottom`, **Then** the DevTools split updates to page
+   only, page with inspector on the right, or page with inspector below.
+8. **Given** saved browser display and inspector settings, **When** the host is
+   reloaded, **Then** both choices are restored. Narrow/mobile viewports use the
+   existing full-screen overlay presentation regardless of the saved panel mode.
 
 ---
 
@@ -94,6 +112,8 @@ roots.
   error rather than silently failing.
 - A registered browser's process dies → entry removed by the periodic liveness
   sweep; panel updates via the event stream.
+- Chrome changes or removes the internal DevTools screencast split-view API →
+  the optional presentation shim fails open to the unmodified frontend.
 - A tracked repo directory disappears → workspace listing degrades gracefully
   (the missing repo does not block access checks for others).
 
@@ -110,7 +130,12 @@ roots.
   variable carried before extraction.)
 - **FR-003**: The host MUST render registered browsers in a tab-scoped
   browser-view panel, stream add/remove events to the client, and proxy browser
-  HTTP + WebSocket (CDP) traffic through the host.
+  HTTP + WebSocket (CDP) traffic through the host. The browser panel MUST offer
+  persisted `docked` and `overlay` display modes on wide viewports. It MUST offer
+  persisted inspector placements `hidden`, `right`, and `bottom`. Inspector
+  layout changes MUST be feature-detected and MUST leave the stock frontend
+  usable when unsupported. Narrow/mobile layouts MUST keep the existing
+  full-screen overlay behavior.
 - **FR-004**: The host MUST periodically drop registry entries whose owning
   process is no longer alive.
 - **FR-005**: The host MUST manage a workspace of repositories, directories, and
@@ -122,19 +147,10 @@ roots.
 - **FR-008**: The host MUST be launchable via a `omniterm` CLI and MUST boot with
   full base functionality when zero plugins are configured.
 - **FR-009**: The host MUST NOT depend on any domain-specific or downstream-
-  product package; base functionality is self-contained.
-
-  **Superseded (open-sourcing).** This originally carried one documented
-  carve-out: a vendored vanilla Chrome DevTools frontend (BSD-3) retained for
-  the browser-view panel's live view, on the grounds that only its package name
-  was vendor-scoped — its contents were generic. The carve-out was
-  removed rather than re-vendored. The panel now uses the DevTools frontend the
-  inspected Chromium already serves on its own CDP port — a fallback core had
-  supported all along (`defaultDevtoolsFrontendUrl` in
-  `packages/core/browserRegistry/tabRegistry.ts`) — verified end to end against
-  a live browser. `OMNITERM_DEVTOOLS_DIR` serves a custom frontend for anyone
-  who wants one. FR-009 now holds with no exceptions, and the install dropped by
-  roughly 120 MB.
+  product package; base functionality is self-contained. The browser view uses
+  the DevTools frontend served by the inspected Chromium and MAY apply a small,
+  fail-open presentation shim. `OMNITERM_DEVTOOLS_DIR` MAY supply a custom
+  frontend without making that frontend a host dependency.
 
 ### Key Entities
 
@@ -146,6 +162,8 @@ roots.
 - **Tab**: the host's minimal `{type, id, name}` unit; the base host ships the
   terminal type.
 - **Settings**: persisted host/UI configuration (e.g. default shell).
+- **Browser presentation settings**: persisted panel display mode (`docked` or
+  `overlay`) and DevTools inspector placement (`hidden`, `right`, or `bottom`).
 
 ## Success Criteria *(mandatory)*
 
@@ -161,6 +179,12 @@ roots.
   and appears in the file panel; a file read outside tracked roots is rejected.
 - **SC-005**: Ported unit suites (paths, repos, worktrees, startServer,
   tabRegistry, languages, workspace selection) pass in the new repo.
+- **SC-006**: Against a compatible Chrome frontend, the browser view hides the
+  inspector sidebar while retaining a visible interactive screencast; when the
+  internal API is unavailable, stock DevTools remains unchanged.
+- **SC-007**: Browser panel display mode and inspector placement apply without a
+  host restart, survive reload, and produce all supported dock/overlay and
+  hidden/right/bottom layouts.
 
 ## Assumptions
 
