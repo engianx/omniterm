@@ -48,10 +48,11 @@ omniterm
 Then open <http://localhost:17717>.
 
 The npm package is named `@omniterm/host`, but the command is `omniterm`. You
-can also run it without installing it globally:
+can also run it without installing it globally — name the package with `-p` and
+the command after it, since the package ships more than one binary:
 
 ```bash
-npx @omniterm/host
+npx -p @omniterm/host omniterm
 ```
 
 ### Change the ports
