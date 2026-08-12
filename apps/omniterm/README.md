@@ -3,9 +3,10 @@
 omniterm puts persistent terminal sessions, project files, and a live browser
 view in one web app.
 
-Run it on the computer that holds your projects, then open it from a laptop,
-tablet, or phone. Your terminal sessions keep running when you close the browser
-or lose your connection.
+Run it on the computer that holds your projects — a laptop, a home server, or a
+cloud VM with no desktop — then open it from a laptop, tablet, or phone. Your
+terminal sessions keep running when you close the browser or lose your
+connection.
 
 ![omniterm web interface](https://raw.githubusercontent.com/engianx/omniterm/main/docs/assets/omniterm-screenshot.png)
 
@@ -17,6 +18,9 @@ or lose your connection.
   connections, device changes, and omniterm restarts.
 - **Work from any device.** You only need a browser and secure network access to
   the computer running omniterm.
+- **Run it on a headless server.** No desktop, display server, or VNC needed.
+- **Drive a real browser on that server.** When something in your terminal opens
+  a URL, you can click, type, and scroll that browser from your device.
 - **Use your existing tools.** Every terminal is a real `tmux` session that you
   can also open over SSH.
 - **Add features with plugins.** Plugins load at runtime without changing or
@@ -25,7 +29,8 @@ or lose your connection.
 ## Install and run
 
 omniterm requires [Node.js](https://nodejs.org/) 24 or newer, `tmux`, and
-`ttyd`.
+`ttyd`. It runs on a server with no desktop. Add Chrome or Chromium if you want
+the [interactive remote browser](#interactive-remote-browser).
 
 Install `tmux` and `ttyd`:
 
@@ -89,13 +94,27 @@ Run `omniterm --help` to see every command-line option.
 - Create and manage Git worktrees from the browser.
 - Run multiple coding agents in separate workspaces and watch them side by side.
 
-### Files and browser view
+### Files
 
 - Browse and edit project files with syntax highlighting and save protection.
 - View images, PDFs, and CSV or TSV files without leaving omniterm.
 - See file changes when another program or coding agent edits a file.
-- Open a live view of a browser started by a process in your terminal.
 - Load editor support only when you open a file that needs it.
+
+### Interactive remote browser
+
+When something in your terminal opens a URL — a sign-in flow, a coding agent —
+Chrome starts on the server and appears in omniterm as a live view.
+
+![Interactive remote browser in omniterm](https://raw.githubusercontent.com/engianx/omniterm/main/docs/assets/remote-browser-screenshot.png)
+
+- Click, type, and scroll the remote page from any device.
+- Finish sign-in flows on a server without a desktop.
+- Switch between running browsers and their open pages from the tab strip.
+- Dock the panel beside your terminal or float it on top.
+- Put Chrome DevTools beside the page, below it, or hide it.
+- Chrome uses its own profile, so your personal cookies and passwords stay out
+  of it.
 
 ### Phones, tablets, and desktops
 
