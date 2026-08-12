@@ -31,6 +31,8 @@ function App() {
     setActiveTabId: homeState.setActiveTabId,
     browserPanelOpen: homeState.browserPanelOpen,
     setBrowserPanelOpen: homeState.setBrowserPanelOpen,
+    browserPanelMode: homeState.browserPanelMode,
+    browserInspectorPosition: homeState.browserInspectorPosition,
     isMobile: homeState.isMobile,
     filesPanelOpen: homeState.filesPanelOpen,
     settingsHydrated: homeState.settingsHydrated,

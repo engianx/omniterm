@@ -51,8 +51,11 @@ consumers.
 2. **Persistent terminal**: open a terminal tab; it survives client reconnect
    (tmux + ttyd). Commands run in the tab inherit a registry URL env var.
 3. **Watch a browser**: a process started in a terminal launches a browser and
-   registers its CDP endpoint to the tab's registry; the panel renders it; CDP
-   is proxied through the host.
+   registers its CDP endpoint to the tab's registry; the panel renders an
+   interactive screencast in the user's chosen docked or overlay layout. The
+   user may hide the DevTools inspector or place it to the right or below the
+   page; CDP is proxied through the host. If the compatible internal layout API
+   is unavailable, the stock DevTools view remains usable.
 4. **Load a plugin**: `omniterm --plugin <path|name>` (repeatable). The host
    dynamically imports each plugin, mounts its routes, and serves its manifest
    entry; the client renders the plugin's tab type / file handlers / iframe from
@@ -74,7 +77,12 @@ consumers.
   POST a CDP endpoint to a tab-scoped registry URL; the client subscribes (SSE)
   and renders the live browser; CDP HTTP/WS is proxied through the host. The
   registry URL is exposed to processes via `OMNITERM_BROWSER_REGISTRY_URL`,
-  auto-set on every terminal the host opens.
+  auto-set on every terminal the host opens. On wide viewports, users MUST be
+  able to choose whether the browser panel is docked beside the terminal or
+  overlaid on it. Users MUST also be able to hide the DevTools inspector or
+  place it to the right or below the interactive page when the proxied frontend
+  exposes a compatible split-view API. Compatibility failure MUST leave stock
+  DevTools usable.
 - FR-003: Workspace management — track repos, directories, and git worktrees;
   expose them over HTTP (`GET/POST /repos`, worktrees) and in a file panel with
   context-menu file handlers.
@@ -117,13 +125,10 @@ consumers.
   type-only plugin contract, so a plugin can be built in its own repository
   without depending on core; plugins are their own packages.
 - NFR-002: Host and core carry **no** product-specific dependencies. Any such
-  dependency belongs to a plugin package. The one former carve-out — a vendored
-  Chrome DevTools frontend the host served at `/devtools/` (see
-  `specs/001-omniterm-core/spec.md` FR-009) — was dropped: the panel now uses the
-  DevTools frontend the inspected Chromium already serves on its own CDP port
-  (`defaultDevtoolsFrontendUrl`), which removed ~120 MB from every install.
-  `OMNITERM_DEVTOOLS_DIR` points the panel at a custom frontend for anyone who
-  wants one.
+  dependency belongs to a plugin package. The browser panel uses the DevTools
+  frontend served by the inspected Chromium, with a small fail-open presentation
+  shim; it does not ship a frontend bundle. `OMNITERM_DEVTOOLS_DIR` points the
+  panel at an optional custom frontend supplied by the operator.
 - NFR-003: Node.js 24+ / TypeScript 5 (strict, ESM only).
 - NFR-004: The plugin contract (loader, manifest, `HostContext`) is the only
   supported extension surface; plugins do not reach into host internals.

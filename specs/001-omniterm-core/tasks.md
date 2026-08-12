@@ -46,9 +46,8 @@ shared ported code, not separate code paths.
 
 - [ ] T007 Copy source `apps/omniterm/**` → `apps/omniterm/**`.
 - [ ] T008 `apps/omniterm/package.json`: name `@omniterm/host`, `bin.omniterm`,
-  deps `@omniterm/core` (`workspace:*`) + the vendored-DevTools package (kept as
-  a carve-out — **later dropped**, see spec.md FR-009) + express/http-proxy/
-  ignore/marked; devDeps tsup/tsx/typescript.
+  deps `@omniterm/core` (`workspace:*`) + express/http-proxy/ignore/marked;
+  devDeps tsup/tsx/typescript. Do not package a DevTools frontend dependency.
 - [ ] T009 Rewrite `'omniterm-core'` → `'@omniterm/core'` in `src/server.ts` and
   `tsup.config.ts` (`noExternal`); port `tsup.config.ts`, `tsconfig.json`,
   `bin/omniterm.js`, `scripts/package.sh`.
@@ -69,9 +68,8 @@ shared ported code, not separate code paths.
 - [ ] T012 Update `packages/core/browserRegistry/tabRegistry.ts` protocol
   comments/strings to `OMNITERM_BROWSER_REGISTRY_URL`.
 - [ ] T013 Audit: a case-insensitive grep for the old vendor prefix across
-  `packages/core` and `apps/omniterm` returns nothing. (Originally one vendor-scoped dependency
-  was allowed under the DevTools carve-out. That carve-out is gone, so the audit
-  now allows none; see spec.md FR-009.)
+  `packages/core` and `apps/omniterm` returns nothing; no vendor-scoped
+  dependency is allowed (spec.md FR-009).
 
 ---
 
@@ -90,6 +88,19 @@ shared ported code, not separate code paths.
 - [ ] T016 [US2] In a terminal, a child process registers a CDP endpoint to
   `OMNITERM_BROWSER_REGISTRY_URL` → browser appears in the tab's panel; kill the
   process → entry removed within the liveness interval (SC-003).
+- [x] T021 [US2] Inject a feature-detected, same-origin presentation shim into
+  the proxied DevTools iframe; hide the screencast split's inspector sidebar
+  when `hideSidebar()` is available and fail open to stock DevTools otherwise.
+- [x] T022 [US2] Verify against a live supported Chrome that the screencast fills
+  the browser view, remains interactive, and an unsupported/missing internal API
+  leaves stock DevTools usable.
+- [x] T023 [US2] Add persisted browser panel display mode (`docked` or `overlay`)
+  to shared settings, host state, Settings UI, and terminal rendering.
+- [x] T024 [US2] Add persisted inspector placement (`hidden`, `right`, or
+  `bottom`) and apply it through the feature-detected DevTools shim.
+- [x] T025 [US2] Verify all six wide-layout combinations, mobile/full-screen
+  fallback, live setting changes, persistence across reload, and fail-open
+  behavior against a compatible Chrome frontend.
 
 ---
 

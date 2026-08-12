@@ -288,7 +288,20 @@ export default function WorkspacePanel({
         <div className={styles.panelScroll}>
           {visibleRepos.length === 0 && (
             <div className={styles.empty}>
-              {activeOnly ? 'No active workspaces.' : 'No repos yet.'}
+              {activeOnly ? (
+                <>
+                  No active workspaces.
+                  {/* The filter is persisted, so it comes back on after a
+                      restart — when no tmux session has survived, this is the
+                      whole panel. Offer the way out here rather than relying on
+                      the user spotting the tinted toggle in the header. */}
+                  <button type="button" className={styles.emptyAction} onClick={onToggleActiveOnly}>
+                    Show all workspaces
+                  </button>
+                </>
+              ) : (
+                'No repos yet.'
+              )}
             </div>
           )}
           {visibleRepos.map(({ repo, worktrees }) => {

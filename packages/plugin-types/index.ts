@@ -89,6 +89,8 @@ export interface Worktree {
 export type PanelDisplayMode = 'overlay' | 'docked';
 export type WorkspacesPanelMode = PanelDisplayMode;
 export type FilesPanelMode = PanelDisplayMode;
+export type BrowserPanelMode = PanelDisplayMode;
+export type BrowserInspectorPosition = 'hidden' | 'right' | 'bottom';
 
 /** xterm renderer used by ttyd: 'webgl' (GPU, fast) or 'dom' (compatible fallback). */
 export type TerminalRenderer = 'webgl' | 'dom';
@@ -123,6 +125,11 @@ export interface Settings {
    */
   workspacesPanelDockedOpen: boolean;
   /**
+   * Whether the workspaces panel is filtered to workspaces that have a live
+   * tmux session. Applies to both display modes.
+   */
+  workspaceFilterActiveOnly: boolean;
+  /**
    * Display mode for the right files panel on wide viewports.
    * "docked" pins it as a permanent right sidebar (auto-narrows to
    * tree-only when no file tabs are open); "overlay" floats it over
@@ -135,6 +142,15 @@ export interface Settings {
    * overlay path uses transient in-memory state, not this setting.
    */
   filesPanelDockedOpen: boolean;
+  /**
+   * Display mode for the browser view on wide viewports. "docked" places it
+   * beside the terminal; "overlay" floats it above the terminal without
+   * consuming terminal width. Narrow viewports always use their existing
+   * full-screen overlay presentation.
+   */
+  browserPanelMode: BrowserPanelMode;
+  /** Placement of Chrome DevTools' inspector relative to its screencast. */
+  browserInspectorPosition: BrowserInspectorPosition;
   /**
    * Whether the browser-view side panel is open in the UI. null means
    * "user has never interacted with it" — the frontend picks a default
