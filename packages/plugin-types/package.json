@@ -1,6 +1,6 @@
 {
   "name": "@omniterm/plugin-types",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Type-only contract between omniterm and its tab-type plugins: TabTypePlugin, HostContext, PluginInstance, and the workspace shapes they carry. No runtime code.",
   "type": "module",
   "license": "MIT",
