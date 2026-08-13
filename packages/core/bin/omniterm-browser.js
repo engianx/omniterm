@@ -162,7 +162,20 @@ async function postRegistration(cdpUrl, pid) {
 }
 
 function chromeArgs(includeDebugFlags) {
-  const args = [`--user-data-dir=${UDD}`];
+  // --no-first-run: without it, a brand-new UDD boots into Chrome's
+  // "Sign in to Chrome" first-run flow (chrome://intro/) instead of a
+  // normal tab. That target (and whatever it opens next, e.g. a Google
+  // sign-in tab) has no backing native BrowserWindow — Browser.getWindowForTarget
+  // 404s on it — so Target.closeTarget/Page.close/`/json/close` all report
+  // success without ever actually closing it, leaving a permanently stuck,
+  // unclosable tab in the omniterm browser panel.
+  // --no-default-browser-check: same spirit — skip a promo prompt this
+  // dedicated, non-interactive-by-default profile has no use for.
+  const args = [
+    `--user-data-dir=${UDD}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+  ];
   if (includeDebugFlags) {
     args.push(
       '--remote-debugging-port=0',
