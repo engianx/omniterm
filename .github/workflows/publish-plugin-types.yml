@@ -131,7 +131,6 @@ jobs:
             PluginManifestEntry,
             Repo,
             Worktree,
-            Settings,
           } from '@omniterm/plugin-types';
 
           export default function createPlugin(): TabTypePlugin {
@@ -142,7 +141,6 @@ jobs:
               createRouter(host: HostContext) {
                 const router = express.Router();
                 router.get('/instances', (_req, res) => {
-                  const settings: Settings = host.settings();
                   const repos: Repo[] = host.repos();
                   const trees: Worktree[] = repos.length
                     ? host.worktrees(repos[0]!.path, repos[0]!.id)
@@ -151,7 +149,7 @@ jobs:
                     { id: 'a', name: 'a', status: 'running' },
                   ];
                   host.broadcast('consumer-gate', {
-                    shell: settings.defaultShell,
+                    roots: host.allowedRoots().length,
                     trees: trees.length,
                   });
                   res.json({ items });
