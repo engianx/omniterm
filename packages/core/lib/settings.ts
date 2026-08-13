@@ -4,28 +4,105 @@ import path from 'path';
 import { SETTINGS_PATH } from './paths.js';
 import { displayNameForPath, repoIdForPath } from './ids.js';
 
-// These shapes cross the plugin boundary (HostContext.settings()), so they are
-// declared in @omniterm/plugin-types and re-exported here. This module still
-// owns the behavior — loading, migrating, and persisting settings.
-import type {
-  PanelDisplayMode,
-  WorkspacesPanelMode,
-  FilesPanelMode,
-  BrowserPanelMode,
-  BrowserInspectorPosition,
-  TerminalRenderer,
-  Settings,
-} from '@omniterm/plugin-types';
+// The persisted settings file, owned here. These types used to live in
+// @omniterm/plugin-types because HostContext.settings() handed the whole file
+// to plugins; that method is gone, so host UI state is no longer part of the
+// published plugin contract and adding a preference no longer requires a
+// plugin-types release.
 
-export type {
-  PanelDisplayMode,
-  WorkspacesPanelMode,
-  FilesPanelMode,
-  BrowserPanelMode,
-  BrowserInspectorPosition,
-  TerminalRenderer,
-  Settings,
-};
+/** Display mode shared by side panels with docked/overlay support. */
+export type PanelDisplayMode = 'overlay' | 'docked';
+export type WorkspacesPanelMode = PanelDisplayMode;
+export type FilesPanelMode = PanelDisplayMode;
+export type BrowserPanelMode = PanelDisplayMode;
+export type BrowserInspectorPosition = 'hidden' | 'right' | 'bottom';
+
+/** xterm renderer used by ttyd: 'webgl' (GPU, fast) or 'dom' (compatible fallback). */
+export type TerminalRenderer = 'webgl' | 'dom';
+
+/** Persisted host settings, as handed to plugins by `HostContext.settings()`. */
+export interface Settings {
+  trackedRepos: string[];
+  trackedDirs: string[];
+  lastActiveWorktree: string | null;
+  sidebarCollapsed: boolean;
+  namingSchemes: Record<string, string>;
+  terminalFontSize: number;
+  defaultShell: string;
+  // path -> terminal tabs (each 1:1 with a tmux session). Persists tab order
+  // and custom names; the live session set is the source of truth on restore.
+  // Migrated from the legacy `tabLayouts` key, whose entries carried a now-
+  // removed `layout` field from the split-pane feature (dropped on migration).
+  terminalTabs: Record<string, { id: string; name: string }[]>;
+  activeSessionId: string | null;
+  activePath: string | null;
+  /**
+   * Display mode for the left workspaces panel on wide viewports.
+   * "docked" pins it as a permanent left sidebar; "overlay" floats it
+   * over the terminal area. Narrow viewports (< 768px) always overlay
+   * regardless of this value.
+   */
+  workspacesPanelMode: WorkspacesPanelMode;
+  /**
+   * Visibility of the docked workspaces panel. Only consulted when
+   * `workspacesPanelMode === "docked"` and the viewport is wide. The
+   * overlay path uses transient in-memory state, not this setting.
+   */
+  workspacesPanelDockedOpen: boolean;
+  /**
+   * Whether the workspaces panel is filtered to workspaces that have a live
+   * tmux session. Applies to both display modes.
+   */
+  workspaceFilterActiveOnly: boolean;
+  /**
+   * Display mode for the right files panel on wide viewports.
+   * "docked" pins it as a permanent right sidebar (auto-narrows to
+   * tree-only when no file tabs are open); "overlay" floats it over
+   * the terminal area. Narrow viewports (< 768px) always overlay.
+   */
+  filesPanelMode: FilesPanelMode;
+  /**
+   * Visibility of the docked files panel. Only consulted when
+   * `filesPanelMode === "docked"` and the viewport is wide. The
+   * overlay path uses transient in-memory state, not this setting.
+   */
+  filesPanelDockedOpen: boolean;
+  /**
+   * Display mode for the browser view on wide viewports. "docked" places it
+   * beside the terminal; "overlay" floats it above the terminal without
+   * consuming terminal width. Narrow viewports always use their existing
+   * full-screen overlay presentation.
+   */
+  browserPanelMode: BrowserPanelMode;
+  /** Placement of Chrome DevTools' inspector relative to its screencast. */
+  browserInspectorPosition: BrowserInspectorPosition;
+  /**
+   * Whether the browser-view side panel is open in the UI. null means
+   * "user has never interacted with it" — the frontend picks a default
+   * (open on desktop, closed on mobile) on first render.
+   */
+  browserPanelOpen: boolean | null;
+  /**
+   * Per-workspace open file tabs. Key is the workspace dir (matches
+   * activePath); value is the list of relative paths currently open in
+   * the file panel and which one is active. Empty/missing key → no tabs.
+   */
+  filePanelTabs: Record<string, { open: string[]; active: string | null }>;
+  /**
+   * Whether pseudonymous usage + performance telemetry is enabled. Opt-out:
+   * defaults to true; set false (via the Settings UI or `omniterm telemetry
+   * off`) to disable. Env signals (DO_NOT_TRACK, OMNITERM_TELEMETRY=0) override
+   * this and force telemetry off regardless.
+   */
+  telemetryEnabled: boolean;
+  /**
+   * xterm renderer for terminals. 'webgl' (default) is GPU-accelerated and far
+   * faster for large scrollback; 'dom' is the compatible fallback if webgl
+   * misbehaves (rendering/selection glitches on some GPUs or remote setups).
+   * Applies to newly opened terminals.
+   */
+  terminalRenderer: TerminalRenderer;
+}
 
 const DEFAULT_SETTINGS: Settings = {
   trackedRepos: [],

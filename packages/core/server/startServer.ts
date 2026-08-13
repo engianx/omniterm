@@ -47,7 +47,6 @@ import {
 import { addClient, broadcast } from '../lib/events.js';
 import { confinePath } from '../lib/paths.js';
 import { allowedRoots } from '../lib/allowedRoots.js';
-import { loadSettings } from '../lib/settings.js';
 import { listRepos } from '../lib/repos.js';
 import { listWorktrees } from '../lib/worktrees.js';
 import { sessionsRouter } from '../plugins/terminal/routes/sessions.js';
@@ -264,7 +263,6 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
     workspaceRoot: () => null,
     allowedRoots,
     confinePath: (rawPath, roots) => confinePath(rawPath, roots ?? allowedRoots()),
-    settings: () => loadSettings(),
     repos: () => listRepos(),
     worktrees: (repoPath, repoId) => listWorktrees(repoPath, repoId),
   };
