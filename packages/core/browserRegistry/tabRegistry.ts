@@ -153,7 +153,11 @@ export interface RouterOptions {
 
 export function createTabRegistryRouter(opts: RouterOptions): Router {
   const router = Router({ mergeParams: true });
-  const proxy = httpProxy.createProxyServer({ changeOrigin: false, ws: true });
+  // changeOrigin: Chrome's embedded DevTools/CDP HTTP server rejects requests
+  // whose Host header isn't a loopback address or IP (DNS-rebinding guard),
+  // so the proxy must rewrite Host to match the Chrome target rather than
+  // forwarding the omniterm host's Host header through unchanged.
+  const proxy = httpProxy.createProxyServer({ changeOrigin: true, ws: true });
   proxy.on('error', (err) => console.error('[tab-registry proxy] error:', err.message));
 
   // ---- Registrations (cross-process writes from subprocess clients) ----
@@ -357,7 +361,15 @@ export function handleCdpUpgrade(
   req.headers.origin = 'http://127.0.0.1';
   req.url = targetPath + (cdpUrl.search || '');
 
-  const proxy = httpProxy.createProxyServer({ changeOrigin: false, ws: true });
+  // Chrome also validates the Host header itself against a loopback
+  // allowlist (independent of the Origin check above), rejecting anything
+  // else with a 500 "Host header is specified and is not an IP address or
+  // localhost." When omniterm is reached via a non-loopback hostname (LAN
+  // name, Tailscale hostname, etc.), the client's Host header is forwarded
+  // through unchanged unless we rewrite it — changeOrigin does that by
+  // setting outgoing Host to the proxy target (cdpUrl.host, always
+  // 127.0.0.1:<port>).
+  const proxy = httpProxy.createProxyServer({ changeOrigin: true, ws: true });
   proxy.on('error', () => {
     try {
       socket.destroy();
