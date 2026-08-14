@@ -897,3 +897,42 @@ test('an install-time throw degrades to stock instead of unplacing the shim', as
   // enhancement breaking what already worked.
   assert.match(installScreencastClipboard(view).state, /^clipboard=stock \(Error/);
 });
+
+test('both edges of a chord are claimed together', async () => {
+  const { installScreencastClipboard } = await loadShim();
+  const view = new FakeClipboardView();
+  installScreencastClipboard(view);
+  setActiveElement(view.canvasElement);
+  await mirrorSelection(view, 'text being moved');
+
+  // A real chord is three events, and the middle one empties the mirror the
+  // claim is derived from. Deciding again at keyup would withhold the press
+  // and forward the release, leaving the page a keyup it never saw pressed.
+  const down = fakeEvent({ key: 'x', metaKey: true });
+  deliver('keydown', down);
+  deliver('cut', fakeEvent({ type: 'cut', clipboardData: fakeClipboardData() }));
+  const up = fakeEvent({ key: 'x', metaKey: true });
+  deliver('keyup', up);
+
+  assert.equal(down.record.stopPropagation, 1);
+  assert.equal(up.record.stopPropagation, 1, 'the keyup must not leak to the page');
+});
+
+test('an unclaimed chord keeps both of its edges', async () => {
+  const { installScreencastClipboard } = await loadShim();
+  const view = new FakeClipboardView();
+  installScreencastClipboard(view);
+  setActiveElement(view.canvasElement);
+  await mirrorSelection(view, '');
+
+  // The mirror filling in mid-chord must not claim the release on its own,
+  // for the same reason in reverse: the page already has the keydown.
+  const down = fakeEvent({ key: 'c', metaKey: true });
+  deliver('keydown', down);
+  await mirrorSelection(view, 'selected after the press');
+  const up = fakeEvent({ key: 'c', metaKey: true });
+  deliver('keyup', up);
+
+  assert.equal(down.record.stopPropagation, 0);
+  assert.equal(up.record.stopPropagation, 0, 'the page gets the whole keystroke');
+});
