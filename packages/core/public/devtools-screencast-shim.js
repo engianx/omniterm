@@ -575,20 +575,18 @@ export function installScreencastClipboard(view) {
     // copy should take, and selecting it never had to move focus off the canvas.
     const frontendHasSelection = () => Boolean(String(window.getSelection() ?? ''));
 
-    const claimChord = (event) => {
-      const chord = classifyClipboardChord(event);
-      if (!chord) return;
-      if (chord === 'paste') {
-        if (canPaste) event.stopPropagation();
-        return;
-      }
-      if (chord === 'cut' && !canCut) return;
+    const shouldClaim = (chord) => {
+      if (chord === 'paste') return canPaste;
+      if (chord === 'cut' && !canCut) return false;
       // Claim copy and cut only when the page has something to copy and this
       // side does not. With no selection they have to stay page keystrokes:
       // Ctrl+C is SIGINT to a terminal running in the remote page, and
       // swallowing it would be far worse than a copy that does nothing.
-      if (selectedText && !frontendHasSelection()) event.stopPropagation();
+      return Boolean(selectedText) && !frontendHasSelection();
     };
+
+    // The letter whose keydown was claimed, so its keyup can follow suit.
+    let claimedKey = '';
 
     const onKeyDown = (event) => {
       if (!ownsFocus()) return;
@@ -596,14 +594,23 @@ export function installScreencastClipboard(view) {
       // itself lands: it covers a selection the page's own script changed, and a
       // drag whose mouseup was released outside the iframe.
       if (event.key === 'Meta' || event.key === 'Control') refreshSelection(true);
-      claimChord(event);
+      const chord = classifyClipboardChord(event);
+      claimedKey = chord && shouldClaim(chord) ? event.key.toLowerCase() : '';
+      if (claimedKey) event.stopPropagation();
       // Deliberately no preventDefault: the local default action is what fires
       // the clipboard event this all depends on.
     };
 
     const onKeyUp = (event) => {
       if (!ownsFocus()) return;
-      claimChord(event);
+      // Follow what the keydown decided rather than deciding again. The two
+      // edges have to agree, and the mirror moves between them: a cut empties
+      // it, so re-deriving here would withhold the keydown and then forward
+      // the keyup, leaving the page a release it never saw pressed.
+      if (claimedKey && typeof event.key === 'string' && event.key.toLowerCase() === claimedKey) {
+        event.stopPropagation();
+        claimedKey = '';
+      }
       // Any keystroke at all can move the caret or replace the selection. One
       // small evaluate per key is nothing beside the JPEG stream already running.
       refreshSelection();
