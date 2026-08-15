@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { ResizeHandle, type DragInfo } from '../app/components/ResizeHandle';
 import type { BrowserInspectorPosition } from '../lib/settings';
-import { pickTargetAfterClose, promoteMru } from './pageSelection';
+import { advanceSelection, emptySelectionState } from './pageSelection';
 
 export interface Browser {
   id: string;
@@ -267,7 +267,7 @@ export default function TabBrowserView({
 
   // Target discovery is only needed when a browser is selected
   const targetState = useTargets(baseUrl, selected?.id ?? null);
-  const { targetsBrowserId } = targetState;
+  const { targetsBrowserId, targetsLoaded } = targetState;
   const pages = useMemo(
     () => targetState.targets.filter((t) => t.type === 'page'),
     [targetState.targets],
@@ -277,73 +277,27 @@ export default function TabBrowserView({
   // Drives hover-reveal of each chip's close button. Inline styles have no
   // :hover, so the hovered chip is tracked explicitly.
   const [hoveredTargetId, setHoveredTargetId] = useState<string | null>(null);
-  // Previous page ORDER per browser, which serves both auto-select rules:
-  // its length detects a freshly-opened page (matches the user's expectation
-  // when they invoke `$BROWSER url` — they want to see what they just opened,
-  // not the previously-active tab), and its indices tell us where a closed
-  // page used to sit so focus can land on its neighbour.
-  // Keyed by browser.id so opening Chrome A doesn't auto-switch in Chrome B.
-  // `lastSelectedRef` lets us detect "user just switched browsers" so we
-  // don't fire spurious auto-select against a stale order from a previous
-  // viewing of the same browser.
-  const prevPageIdsRef = useRef<Map<string, string[]>>(new Map());
-  // Most-recently-used page order per browser, most-recent-first. Closing the
-  // active page returns to the page the user was last on, which position in
-  // the strip cannot tell us.
-  const mruRef = useRef<Map<string, string[]>>(new Map());
-  const lastSelectedRef = useRef<string | null>(null);
-
-  // Prune ref entries for browsers that no longer exist. Without this, a
-  // future browser registered with the same id (e.g. after a server restart)
-  // would inherit the stale order and suppress auto-select for its first page.
-  useEffect(() => {
-    const liveIds = new Set(browsers.map((b) => b.id));
-    for (const id of prevPageIdsRef.current.keys()) {
-      if (!liveIds.has(id)) prevPageIdsRef.current.delete(id);
-    }
-    for (const id of mruRef.current.keys()) {
-      if (!liveIds.has(id)) mruRef.current.delete(id);
-    }
-  }, [browsers]);
+  // All page-selection bookkeeping: per-browser page order and MRU stack,
+  // plus which browser was evaluated last. advanceSelection owns every rule
+  // that reads or writes it, including pruning browsers that have gone away.
+  const selectionRef = useRef(emptySelectionState);
   useEffect(() => {
     if (!selected) {
-      lastSelectedRef.current = null;
+      selectionRef.current = { ...selectionRef.current, lastBrowserId: null };
       setSelectedTargetId(null);
       return;
     }
-    // In the commit where the user switches browsers, `pages` still describes
-    // the browser they left — useTargets' reset only schedules an update, and
-    // this effect is registered after it. Recording that stale order under the
-    // newly selected browser's id would overwrite its MRU stack with pages it
-    // has never had, quietly demoting close-handling back to the positional
-    // fallback for the rest of the session. Wait for the two to agree.
-    if (targetsBrowserId !== selected.id) return;
-    const justSwitchedBrowser = lastSelectedRef.current !== selected.id;
-    lastSelectedRef.current = selected.id;
-    const prevIds = prevPageIdsRef.current.get(selected.id) ?? [];
-    const pageIds = pages.map((p) => p.targetId);
-    prevPageIdsRef.current.set(selected.id, pageIds);
-    if (!justSwitchedBrowser && pageIds.length > prevIds.length && pageIds.length > 0) {
-      // New page(s) appeared — jump to the most recently added one. mergeTargets
-      // appends new targets, so the last entry is the newest.
-      setSelectedTargetId(pageIds[pageIds.length - 1]);
-    } else if (!selectedTargetId && pageIds.length > 0) {
-      setSelectedTargetId(pageIds[0]);
-    } else if (selectedTargetId && !pageIds.includes(selectedTargetId)) {
-      // The active page went away — return to where the user last was.
-      const mru = mruRef.current.get(selected.id) ?? [];
-      setSelectedTargetId(pickTargetAfterClose(mru, prevIds, pageIds, selectedTargetId));
-    } else if (selectedTargetId) {
-      // Record the standing selection. Every path above re-runs this effect
-      // with its new selectedTargetId, so each one lands here on the next
-      // pass — this is the single writer of the MRU stack, which is also
-      // where stale ids get pruned.
-      mruRef.current.set(
-        selected.id,
-        promoteMru(mruRef.current.get(selected.id) ?? [], selectedTargetId, pageIds),
-      );
-    }
-  }, [selected, pages, selectedTargetId, targetsBrowserId]);
+    const { state, outcome } = advanceSelection(selectionRef.current, {
+      browserId: selected.id,
+      pageIds: pages.map((p) => p.targetId),
+      selectedTargetId,
+      targetsBrowserId,
+      targetsLoaded,
+      liveBrowserIds: browsers.map((b) => b.id),
+    });
+    selectionRef.current = state;
+    if (outcome.kind === 'select') setSelectedTargetId(outcome.targetId);
+  }, [selected, pages, selectedTargetId, targetsBrowserId, targetsLoaded, browsers]);
 
   useEffect(() => {
     setSelectedTargetId(null);
@@ -691,6 +645,11 @@ function useTargets(baseUrl: string, browserId: string | null) {
   // effect runs — for one commit the two refer to different browsers, and
   // acting on that mismatch files one browser's pages under another's id.
   const [targetsBrowserId, setTargetsBrowserId] = useState<string | null>(null);
+  // Whether `Target.getTargets` has answered for the current browser. `targets`
+  // being empty cannot stand in for this: an empty list is also what a browser
+  // with no pages looks like, and what every browser looks like for the moment
+  // between switching to it and its snapshot arriving.
+  const [targetsLoaded, setTargetsLoaded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const msgIdRef = useRef(1);
@@ -699,6 +658,7 @@ function useTargets(baseUrl: string, browserId: string | null) {
   useEffect(() => {
     setTargets([]);
     setTargetsBrowserId(browserId);
+    setTargetsLoaded(false);
     setConnected(false);
     setError(null);
     wsRef.current = null;
@@ -737,6 +697,8 @@ function useTargets(baseUrl: string, browserId: string | null) {
       }
       if (msg.result?.targetInfos) {
         setTargets((prev) => mergeTargets(prev, msg.result!.targetInfos!));
+        // The getTargets reply, even when it carries no targets at all.
+        setTargetsLoaded(true);
         return;
       }
       if (msg.method === 'Target.targetCreated' && msg.params?.targetInfo) {
@@ -768,7 +730,7 @@ function useTargets(baseUrl: string, browserId: string | null) {
     ws.send(JSON.stringify({ id, method, params: params ?? {} }));
   }, []);
 
-  return { targets, targetsBrowserId, connected, error, sendCommand };
+  return { targets, targetsBrowserId, targetsLoaded, connected, error, sendCommand };
 }
 
 // IMPORTANT: insertion order is meaningful. The auto-select-newest-page

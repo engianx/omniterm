@@ -65,3 +65,154 @@ export function pickTargetAfterClose(
   if (closedIdx < 0) return nextIds[0] ?? null;
   return nextIds[Math.min(closedIdx, nextIds.length - 1)] ?? null;
 }
+
+/** What the browser view should do in response to a change in its page list. */
+export type SelectionOutcome =
+  /** Activate this page (null when there is nothing left to activate). */
+  | { kind: 'select'; targetId: string | null }
+  /** Selection is already correct — fold it into the MRU stack. */
+  | { kind: 'record' }
+  /** Nothing to do. */
+  | { kind: 'idle' };
+
+/**
+ * Decide what the active page should be after the page list changes.
+ *
+ * This is the whole branch cascade the browser view used to run inline. It
+ * lives here because the ordering between its cases is subtle and has been
+ * wrong twice: the cases are mutually exclusive by position, so an earlier
+ * one silently preempting a later one is invisible at the call site and
+ * shows up only as a page you did not expect being activated.
+ *
+ * Callers must not invoke this until the page list is known to describe the
+ * currently selected browser AND to have been populated at least once. A
+ * browser switch briefly presents an empty list for the new browser; feeding
+ * that here makes `pageIds.length > prevIds.length` true on the very next
+ * call (N > 0), which fires the "new page appeared" case for what is really
+ * just the first load, and jumps to the browser's last page instead of its
+ * first.
+ */
+export function nextSelection(input: {
+  /** True on the first call after the selected browser changed. */
+  justSwitchedBrowser: boolean;
+  /** Page order at the previous call, for this browser. */
+  prevIds: readonly string[];
+  /** Page order now. */
+  pageIds: readonly string[];
+  /** Currently active page, if any. */
+  selectedTargetId: string | null;
+  /** MRU stack for this browser, most-recent-first. */
+  mru: readonly string[];
+}): SelectionOutcome {
+  const { justSwitchedBrowser, prevIds, pageIds, selectedTargetId, mru } = input;
+
+  // A page was added while the user was watching — show them what just
+  // opened, which is what they want after `$BROWSER url`. mergeTargets is
+  // append-only, so the newest target is last.
+  if (!justSwitchedBrowser && pageIds.length > prevIds.length && pageIds.length > 0) {
+    return { kind: 'select', targetId: pageIds[pageIds.length - 1] ?? null };
+  }
+  // No active page yet — the first load of a browser, including one the user
+  // has just switched to. Start at the head of its strip.
+  if (!selectedTargetId && pageIds.length > 0) {
+    return { kind: 'select', targetId: pageIds[0] ?? null };
+  }
+  // The active page went away.
+  if (selectedTargetId && !pageIds.includes(selectedTargetId)) {
+    return {
+      kind: 'select',
+      targetId: pickTargetAfterClose(mru, prevIds, pageIds, selectedTargetId),
+    };
+  }
+  if (selectedTargetId) return { kind: 'record' };
+  return { kind: 'idle' };
+}
+
+/** Per-browser bookkeeping the selection rules read. */
+interface BrowserSelectionState {
+  /** Page order as of the last *evaluated* call for this browser. */
+  prevIds: readonly string[];
+  /** MRU stack, most-recent-first. */
+  mru: readonly string[];
+}
+
+export interface SelectionState {
+  browsers: Readonly<Record<string, BrowserSelectionState>>;
+  /** Browser evaluated on the previous call, across all browsers. */
+  lastBrowserId: string | null;
+}
+
+export const emptySelectionState: SelectionState = { browsers: {}, lastBrowserId: null };
+
+/**
+ * Advance the browser view's page-selection state by one observation.
+ *
+ * This owns the *sequencing* around `nextSelection`: which observations are
+ * trustworthy enough to record, when a call counts as a browser switch, and
+ * when per-browser bookkeeping is dropped. Both bugs this code has had lived
+ * here rather than in the rules themselves — an untrustworthy observation
+ * recorded as fact, which then made a later, honest observation look like
+ * something it wasn't. Keeping it pure is what lets a test drive a whole
+ * switch sequence instead of a single frame.
+ *
+ * Two observations are refused outright:
+ *   - `targetsBrowserId !== browserId` — the page list still describes the
+ *     browser the user left, because the discovery hook resets on its own
+ *     schedule. Recording it files one browser's pages under another's id.
+ *   - `!targetsLoaded` — no snapshot has arrived for this browser yet, so the
+ *     empty page list is an artifact of the reset rather than a real state.
+ *     Recording it erases the browser's remembered order, and makes the next
+ *     call look like every one of its pages had just been opened.
+ */
+export function advanceSelection(
+  state: SelectionState,
+  input: {
+    browserId: string;
+    pageIds: readonly string[];
+    selectedTargetId: string | null;
+    /** Which browser `pageIds` actually describes. */
+    targetsBrowserId: string | null;
+    /** Whether a target snapshot has arrived for that browser. */
+    targetsLoaded: boolean;
+    /** Browsers still registered; anything else is dropped from state. */
+    liveBrowserIds: readonly string[];
+  },
+): { state: SelectionState; outcome: SelectionOutcome } {
+  const { browserId, pageIds, selectedTargetId, targetsBrowserId, targetsLoaded } = input;
+
+  // Drop bookkeeping for browsers that are gone, so a future browser reusing
+  // an id (after a host restart, say) cannot inherit a stale order.
+  const live = new Set(input.liveBrowserIds);
+  const browsers: Record<string, BrowserSelectionState> = {};
+  for (const [id, entry] of Object.entries(state.browsers)) {
+    if (live.has(id)) browsers[id] = entry;
+  }
+  const pruned: SelectionState = { browsers, lastBrowserId: state.lastBrowserId };
+
+  if (targetsBrowserId !== browserId || !targetsLoaded) {
+    return { state: pruned, outcome: { kind: 'idle' } };
+  }
+
+  const entry = browsers[browserId] ?? { prevIds: [], mru: [] };
+  const justSwitchedBrowser = state.lastBrowserId !== browserId;
+  const outcome = nextSelection({
+    justSwitchedBrowser,
+    prevIds: entry.prevIds,
+    pageIds,
+    selectedTargetId,
+    mru: entry.mru,
+  });
+
+  const mru =
+    outcome.kind === 'record' && selectedTargetId
+      ? promoteMru(entry.mru, selectedTargetId, pageIds)
+      : entry.mru;
+
+  return {
+    state: {
+      browsers: { ...browsers, [browserId]: { prevIds: [...pageIds], mru } },
+      lastBrowserId: browserId,
+    },
+    outcome,
+  };
+}
