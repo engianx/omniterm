@@ -33,6 +33,13 @@ export interface BrowserView {
   browserCdpUrl: string;
   pageCdpUrlTemplate: string;
   devtoolsFrontendUrl: string;
+  /**
+   * Forwarded from the registration so the UI's browser switcher can tell
+   * two entries apart. `label` alone is not enough: the omniterm-browser
+   * shim hardcodes it, so every shim-launched Chrome registers under the
+   * same name. Absent when the registrant didn't report a pid.
+   */
+  pid?: number;
 }
 
 interface TabRegistry {
@@ -75,6 +82,7 @@ function toView(entry: BrowserEntry, devtoolsFrontendUrl: string): BrowserView {
     browserCdpUrl: entry.cdpUrl,
     pageCdpUrlTemplate: derivePageCdpUrlTemplate(entry.cdpUrl),
     devtoolsFrontendUrl,
+    pid: entry.pid,
   };
 }
 
