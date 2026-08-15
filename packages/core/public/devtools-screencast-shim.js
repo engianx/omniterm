@@ -758,6 +758,14 @@ async function placeInspector() {
       currentStage = `place inspector on ${requestedPosition}`;
       const applied = applyInspectorPosition(split, requestedPosition);
       if (!applied.ok) {
+        // Both handles were installed for a screencast we then failed to
+        // place. They only make sense as part of that arrangement — the
+        // clipboard bridge in particular claims copy/paste chords on behalf
+        // of a canvas that is now laid out by stock DevTools — so roll them
+        // back instead of leaving them armed. Same reasoning as the frame
+        // handle's own degrade path.
+        clipboard.revert();
+        frame.revert();
         recordState('unsupported', applied.reason);
         return;
       }
