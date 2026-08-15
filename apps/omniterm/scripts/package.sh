@@ -52,11 +52,14 @@ fi
 
 echo "[omniterm] Assembling standalone/..."
 rm -rf "$APP_DIR/standalone"
-mkdir -p "$APP_DIR/standalone/server" "$APP_DIR/standalone/client" "$APP_DIR/standalone/public"
+mkdir -p "$APP_DIR/standalone/server" "$APP_DIR/standalone/client"
 
 cp "$APP_DIR/dist/server.js" "$APP_DIR/standalone/server/server.js"
+# No standalone/public: vite's publicDir already copies core/public/* into
+# core/dist/client/, and startServer mounts clientDir ahead of publicDir, so a
+# standalone/public/ copy is dead weight that the first mount always shadows.
+# It was shipping every public asset twice — the screencast shim alone is 33KB.
 cp -r "$CORE_DIR/dist/client/." "$APP_DIR/standalone/client/"
-cp -r "$CORE_DIR/public/." "$APP_DIR/standalone/public/"
 
 echo "[omniterm] Copying bin shims from @omniterm/core..."
 cp "$CORE_DIR/bin/omniterm-browser.js" "$APP_DIR/bin/omniterm-browser.js"

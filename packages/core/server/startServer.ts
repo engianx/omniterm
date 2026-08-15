@@ -362,7 +362,11 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
     express.static(path.join(clientDir, 'assets'), { immutable: true, maxAge: '1y' }),
   );
   app.use(express.static(clientDir));
-  app.use(express.static(publicDir));
+  // Source-layout fallback only. Vite copies publicDir into the client bundle,
+  // so clientDir above already serves these and shadows this mount; the
+  // standalone package therefore ships no public/ at all. Guarded because
+  // mounting a directory that does not exist is a no-op that reads like a bug.
+  if (existsSync(publicDir)) app.use(express.static(publicDir));
   app.get('/{*rest}', (_req, res) => {
     res.type('html').send(clientIndexHtml);
   });
