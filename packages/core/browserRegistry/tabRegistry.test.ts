@@ -135,6 +135,32 @@ describe('tabRegistry', () => {
     cleanupTab('tabD');
   });
 
+  // The UI's browser switcher labels each entry with pid + uptime, because
+  // the omniterm-browser shim registers every Chrome it launches under the
+  // same hardcoded label. Dropping pid in toView would make two concurrent
+  // browsers indistinguishable in that menu.
+  it('GET /t/:tabId/browsers carries pid through, and omits it when unreported', async () => {
+    cleanupTab('tabPid');
+    await fetch(`${baseUrl}/t/tabPid/registry/browsers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // Own pid: guaranteed alive, so the 5s pid-liveness sweep can't evict
+      // the entry out from under a slow run.
+      body: JSON.stringify({ cdpUrl: 'ws://127.0.0.1:9333/devtools/browser/a', pid: process.pid }),
+    });
+    await fetch(`${baseUrl}/t/tabPid/registry/browsers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cdpUrl: 'ws://127.0.0.1:9444/devtools/browser/b' }),
+    });
+    const res = await fetch(`${baseUrl}/t/tabPid/browsers`);
+    const data = (await res.json()) as { browsers: Array<{ pid?: number }> };
+    assert.equal(data.browsers.length, 2);
+    assert.equal(data.browsers[0].pid, process.pid);
+    assert.equal(data.browsers[1].pid, undefined);
+    cleanupTab('tabPid');
+  });
+
   it("cleanupTab clears the tab's entire registry", async () => {
     await fetch(`${baseUrl}/t/tabE/registry/browsers`, {
       method: 'POST',

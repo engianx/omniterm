@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { ResizeHandle, type DragInfo } from '../app/components/ResizeHandle';
 import type { BrowserInspectorPosition } from '../lib/settings';
+import { pickTargetAfterClose, promoteMru } from './pageSelection';
 
 export interface Browser {
   id: string;
@@ -12,6 +13,10 @@ export interface Browser {
   browserCdpUrl: string;
   pageCdpUrlTemplate: string;
   devtoolsFrontendUrl: string;
+  /** Chromium's pid, when the registrant reported one. Disambiguates the
+   *  switcher: the omniterm-browser shim hardcodes `label`, so every
+   *  shim-launched Chrome registers under the same name. */
+  pid?: number;
 }
 
 interface CdpTarget {
@@ -135,12 +140,21 @@ function installDevToolsScreencastShim(
 /**
  * TabBrowserView — an embedded browser live-view for a single left-side tab.
  *
- * Given a list of browsers (filtered by the parent tab to only those it owns),
- * renders a tab strip across the top with one entry per Chromium instance,
- * each expandable into its open Chromium pages. The selected page is
- * displayed inline via the embedded DevTools frontend bundled under
- * /devtools/, connected through the OmniTerm proxy (`/b/:id/browser` +
- * `/b/:id/page/:targetId`).
+ * The tab strip across the top lists the *pages* of the selected Chromium
+ * instance, one chip per page, titled from live CDP target info. That is the
+ * common shape: the omniterm-browser shim keeps a single Chrome per
+ * user-data-dir and hands every subsequent URL to it as a new tab, so one
+ * process with many pages is the normal case and gets the whole strip.
+ *
+ * A second Chromium only appears when something registers its own CDP
+ * endpoint (a Playwright/testbox harness, or an overridden
+ * OMNITERM_BROWSER_UDD). For that case a BrowserSwitcher chip is pinned at
+ * the strip's left edge — rendered only when more than one browser is
+ * registered, so the common case pays nothing for it.
+ *
+ * The selected page is displayed inline via the embedded DevTools frontend
+ * bundled under /devtools/, connected through the OmniTerm proxy
+ * (`/b/:id/browser` + `/b/:id/page/:targetId`).
  *
  * The parent owns layout and can provide resize/close affordances. Without an
  * explicit width (the mobile/full-surface path), the view fills its flex parent.
@@ -158,6 +172,7 @@ export default function TabBrowserView({
 }: Props) {
   const baseUrl = tabBaseUrl ?? `/t/${encodeURIComponent(tabId)}`;
   const containerRef = useRef<HTMLDivElement>(null);
+  const activeChipRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const shimReadyRef = useRef(false);
   const [browsers, setBrowsers] = useState<Browser[]>([]);
@@ -252,29 +267,42 @@ export default function TabBrowserView({
 
   // Target discovery is only needed when a browser is selected
   const targetState = useTargets(baseUrl, selected?.id ?? null);
+  const { targetsBrowserId } = targetState;
   const pages = useMemo(
     () => targetState.targets.filter((t) => t.type === 'page'),
     [targetState.targets],
   );
 
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
-  // Track previous page count per browser so we can auto-select a freshly-
-  // opened page (matches the user's expectation when they invoke `$BROWSER url`
-  // — they want to see what they just opened, not the previously-active tab).
+  // Drives hover-reveal of each chip's close button. Inline styles have no
+  // :hover, so the hovered chip is tracked explicitly.
+  const [hoveredTargetId, setHoveredTargetId] = useState<string | null>(null);
+  // Previous page ORDER per browser, which serves both auto-select rules:
+  // its length detects a freshly-opened page (matches the user's expectation
+  // when they invoke `$BROWSER url` — they want to see what they just opened,
+  // not the previously-active tab), and its indices tell us where a closed
+  // page used to sit so focus can land on its neighbour.
   // Keyed by browser.id so opening Chrome A doesn't auto-switch in Chrome B.
   // `lastSelectedRef` lets us detect "user just switched browsers" so we
-  // don't fire spurious auto-select against stale counts from a previous
+  // don't fire spurious auto-select against a stale order from a previous
   // viewing of the same browser.
-  const prevPageCountRef = useRef<Map<string, number>>(new Map());
+  const prevPageIdsRef = useRef<Map<string, string[]>>(new Map());
+  // Most-recently-used page order per browser, most-recent-first. Closing the
+  // active page returns to the page the user was last on, which position in
+  // the strip cannot tell us.
+  const mruRef = useRef<Map<string, string[]>>(new Map());
   const lastSelectedRef = useRef<string | null>(null);
 
   // Prune ref entries for browsers that no longer exist. Without this, a
   // future browser registered with the same id (e.g. after a server restart)
-  // would inherit the stale count and suppress auto-select for its first page.
+  // would inherit the stale order and suppress auto-select for its first page.
   useEffect(() => {
     const liveIds = new Set(browsers.map((b) => b.id));
-    for (const id of prevPageCountRef.current.keys()) {
-      if (!liveIds.has(id)) prevPageCountRef.current.delete(id);
+    for (const id of prevPageIdsRef.current.keys()) {
+      if (!liveIds.has(id)) prevPageIdsRef.current.delete(id);
+    }
+    for (const id of mruRef.current.keys()) {
+      if (!liveIds.has(id)) mruRef.current.delete(id);
     }
   }, [browsers]);
   useEffect(() => {
@@ -283,24 +311,52 @@ export default function TabBrowserView({
       setSelectedTargetId(null);
       return;
     }
+    // In the commit where the user switches browsers, `pages` still describes
+    // the browser they left — useTargets' reset only schedules an update, and
+    // this effect is registered after it. Recording that stale order under the
+    // newly selected browser's id would overwrite its MRU stack with pages it
+    // has never had, quietly demoting close-handling back to the positional
+    // fallback for the rest of the session. Wait for the two to agree.
+    if (targetsBrowserId !== selected.id) return;
     const justSwitchedBrowser = lastSelectedRef.current !== selected.id;
     lastSelectedRef.current = selected.id;
-    const prevCount = prevPageCountRef.current.get(selected.id) ?? 0;
-    prevPageCountRef.current.set(selected.id, pages.length);
-    if (!justSwitchedBrowser && pages.length > prevCount && pages.length > 0) {
+    const prevIds = prevPageIdsRef.current.get(selected.id) ?? [];
+    const pageIds = pages.map((p) => p.targetId);
+    prevPageIdsRef.current.set(selected.id, pageIds);
+    if (!justSwitchedBrowser && pageIds.length > prevIds.length && pageIds.length > 0) {
       // New page(s) appeared — jump to the most recently added one. mergeTargets
       // appends new targets, so the last entry is the newest.
-      setSelectedTargetId(pages[pages.length - 1].targetId);
-    } else if (!selectedTargetId && pages.length > 0) {
-      setSelectedTargetId(pages[0].targetId);
-    } else if (selectedTargetId && !pages.some((p) => p.targetId === selectedTargetId)) {
-      setSelectedTargetId(pages[0]?.targetId ?? null);
+      setSelectedTargetId(pageIds[pageIds.length - 1]);
+    } else if (!selectedTargetId && pageIds.length > 0) {
+      setSelectedTargetId(pageIds[0]);
+    } else if (selectedTargetId && !pageIds.includes(selectedTargetId)) {
+      // The active page went away — return to where the user last was.
+      const mru = mruRef.current.get(selected.id) ?? [];
+      setSelectedTargetId(pickTargetAfterClose(mru, prevIds, pageIds, selectedTargetId));
+    } else if (selectedTargetId) {
+      // Record the standing selection. Every path above re-runs this effect
+      // with its new selectedTargetId, so each one lands here on the next
+      // pass — this is the single writer of the MRU stack, which is also
+      // where stale ids get pruned.
+      mruRef.current.set(
+        selected.id,
+        promoteMru(mruRef.current.get(selected.id) ?? [], selectedTargetId, pageIds),
+      );
     }
-  }, [selected, pages, selectedTargetId]);
+  }, [selected, pages, selectedTargetId, targetsBrowserId]);
 
   useEffect(() => {
     setSelectedTargetId(null);
   }, [selected?.id]);
+
+  // Keep the active chip on screen. Auto-select regularly lands on a page the
+  // strip is not scrolled to — `$BROWSER url` appends to the end, and closing
+  // a page can jump anywhere by recency — which otherwise reads as the
+  // viewport changing with no visible tab selection. `nearest` on both axes
+  // scrolls the strip the minimum needed and leaves the page alone.
+  useEffect(() => {
+    activeChipRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [selectedTargetId]);
 
   // Bring the selected target to the foreground so headless Chrome paints
   // it. Without this, switching to a background tab shows blank screencast.
@@ -354,35 +410,93 @@ export default function TabBrowserView({
         />
       )}
       <div style={S.tabsStrip}>
-        {browsers.map((b) => {
-          const isActive = b.id === selectedId;
-          // Show chevron whenever the active browser has any pages, not just
-          // 2+. With per-page close in the menu, a single-page browser still
-          // benefits from the chevron — it's the only way to close the
-          // lingering page (e.g., an OAuth tab whose calling tool was Ctrl-C'd).
-          const showChevron = isActive && pages.length >= 1;
-          const currentPage = pages.find((p) => p.targetId === selectedTargetId) ?? pages[0];
-          return (
-            <div
-              key={b.id}
-              style={{ ...S.tab, ...(isActive ? S.tabActive : {}) }}
-              onClick={() => setSelectedId(b.id)}
-              title={`${b.label} · ${formatUptime(Date.now() - b.startedAt)}`}
+        {/* Only earns its width when there is actually a choice to make. */}
+        {browsers.length > 1 && selected && (
+          <BrowserSwitcher browsers={browsers} selectedId={selected.id} onSelect={setSelectedId} />
+        )}
+        <div style={S.tabsScroller}>
+          {pages.map((p) => {
+            const isActive = p.targetId === selectedTargetId;
+            const title = p.title || p.url;
+            // Chrome's own convention: the active chip always offers close, the
+            // rest reveal it on hover. Kept mounted-but-invisible rather than
+            // unmounted so the chip doesn't change width under the pointer.
+            const revealClose = isActive || hoveredTargetId === p.targetId;
+            return (
+              <div
+                key={p.targetId}
+                ref={isActive ? activeChipRef : undefined}
+                style={{ ...S.tab, ...(isActive ? S.tabActive : {}) }}
+                onClick={() => setSelectedTargetId(p.targetId)}
+                onMouseEnter={() => setHoveredTargetId(p.targetId)}
+                onMouseLeave={() =>
+                  setHoveredTargetId((h) => (h === p.targetId ? null : h))
+                }
+                // Chips truncate hard, so the tooltip carries the untruncated
+                // title as well as the URL it hides. Duplicate tabs of one URL
+                // are common, and this is what tells them apart.
+                title={p.title ? `${p.title}\n${p.url}` : p.url}
+              >
+                <span style={S.tabLabel}>{title}</span>
+                <button
+                  type="button"
+                  style={{ ...S.tabClose, ...(revealClose ? {} : S.tabCloseHidden) }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    sendTargetCommand('Target.closeTarget', { targetId: p.targetId });
+                  }}
+                  title="Close page"
+                  aria-label={`Close ${title}`}
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+          {/* A registered browser whose CDP socket hasn't reported targets yet
+              would otherwise leave the strip and the viewport both blank, which
+              reads as a broken panel rather than a pending one. */}
+          {selected && pages.length === 0 && (
+            <span style={S.stripHint}>
+              {targetsConnected ? 'No pages open' : 'Connecting…'}
+            </span>
+          )}
+        </div>
+        {selected && targetsConnected && (
+          <button
+            type="button"
+            style={S.newTabButton}
+            onClick={() => sendTargetCommand('Target.createTarget', { url: 'about:blank' })}
+            title="New page"
+            aria-label="New page"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <span style={S.tabLabel}>{b.label}</span>
-              {showChevron && currentPage && (
-                <TargetChevronMenu
-                  pages={pages}
-                  selectedTargetId={currentPage.targetId}
-                  onSelect={setSelectedTargetId}
-                  onCloseTarget={(targetId) =>
-                    targetState.sendCommand('Target.closeTarget', { targetId })
-                  }
-                />
-              )}
-            </div>
-          );
-        })}
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        )}
         <div style={S.tabsSpacer} />
         {onClose && (
           <button style={S.closeButton} onClick={onClose} title="Close browser view">
@@ -435,37 +549,37 @@ export default function TabBrowserView({
   );
 }
 
-// --- Target chevron menu (per-browser page picker) -----------------------
+// --- Browser switcher (multi-process picker) -----------------------------
 
-interface TargetChevronMenuProps {
-  pages: CdpTarget[];
-  selectedTargetId: string;
-  onSelect: (targetId: string) => void;
-  /**
-   * Optional callback fired when the user clicks the [×] next to a page.
-   * Parent should send `Target.closeTarget` over CDP. The menu does not
-   * close itself — the page disappears via the `Target.targetDestroyed`
-   * event flowing through useTargets, so the dropdown stays open and the
-   * user can close more pages without re-opening the menu.
-   */
-  onCloseTarget?: (targetId: string) => void;
+interface BrowserSwitcherProps {
+  browsers: Browser[];
+  selectedId: string;
+  onSelect: (browserId: string) => void;
 }
 
-function TargetChevronMenu({
-  pages,
-  selectedTargetId,
-  onSelect,
-  onCloseTarget,
-}: TargetChevronMenuProps) {
+/**
+ * Leading chip in the tab strip that picks which Chromium instance the page
+ * chips belong to. The caller renders it only when more than one browser is
+ * registered — with a single process (the overwhelmingly common case) there
+ * is nothing to switch between and the strip's full width goes to titles.
+ *
+ * Entries are identified by `label` plus a pid/uptime meta line: the
+ * omniterm-browser shim registers every Chrome it launches under the same
+ * hardcoded label, so the label alone can be ambiguous. Registrants that
+ * choose their own label (a Playwright/testbox harness) read cleanly.
+ */
+function BrowserSwitcher({ browsers, selectedId, onSelect }: BrowserSwitcherProps) {
   const [open, setOpen] = useState(false);
-  const [menuRect, setMenuRect] = useState<{ top: number; right: number } | null>(null);
+  const [menuRect, setMenuRect] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLUListElement | null>(null);
+
+  const selected = browsers.find((b) => b.id === selectedId) ?? null;
 
   useLayoutEffect(() => {
     if (!open || !buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
-    setMenuRect({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setMenuRect({ top: rect.bottom + 4, left: rect.left });
   }, [open]);
 
   useEffect(() => {
@@ -497,50 +611,24 @@ function TargetChevronMenu({
       ? createPortal(
           <ul
             ref={menuRef}
-            style={{ ...S.dropdownMenu, top: menuRect.top, right: menuRect.right, width: 360 }}
+            style={{ ...S.dropdownMenu, top: menuRect.top, left: menuRect.left, width: 260 }}
           >
-            {pages.map((p) => {
-              const isSelected = p.targetId === selectedTargetId;
+            {browsers.map((b) => {
+              const isSelected = b.id === selectedId;
               return (
                 <li
-                  key={p.targetId}
+                  key={b.id}
                   style={{ ...S.dropdownItem, ...(isSelected ? S.dropdownItemSelected : {}) }}
                   onClick={() => {
-                    onSelect(p.targetId);
+                    onSelect(b.id);
                     setOpen(false);
                   }}
-                  title={p.url}
+                  title={b.browserCdpUrl}
                 >
                   <div style={S.dropdownItemContent}>
-                    <div style={S.dropdownItemTitle}>{p.title || p.url}</div>
-                    <div style={S.dropdownItemUrl}>{p.url}</div>
+                    <div style={S.dropdownItemTitle}>{b.label}</div>
+                    <div style={S.dropdownItemUrl}>{browserMeta(b)}</div>
                   </div>
-                  {onCloseTarget && (
-                    <button
-                      type="button"
-                      style={S.dropdownItemClose}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCloseTarget(p.targetId);
-                      }}
-                      title="Close this page"
-                      aria-label="Close page"
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  )}
                 </li>
               );
             })}
@@ -549,17 +637,22 @@ function TargetChevronMenu({
         )
       : null;
 
+  const running = `switch browser (${browsers.length} running)`;
+  const switcherTitle = selected
+    ? `${selected.label} · ${browserMeta(selected)} — ${running}`
+    : running;
+
   return (
     <>
       <button
         ref={buttonRef}
         type="button"
-        style={S.chevronButton}
+        style={S.switcherButton}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        title={`Select page (${pages.length} open)`}
+        title={switcherTitle}
       >
         <svg
           width="12"
@@ -570,19 +663,34 @@ function TargetChevronMenu({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          style={{ flexShrink: 0 }}
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
+        <span style={S.switcherLabel}>{selected?.label ?? 'browser'}</span>
       </button>
       {menu}
     </>
   );
 }
 
+/** Distinguishing detail for a browser entry: pid when the registrant
+ *  reported one, else the registry id, plus how long it has been up. */
+function browserMeta(b: Browser): string {
+  const identity = b.pid !== undefined ? `pid ${b.pid}` : `id ${b.id}`;
+  return `${identity} · ${formatUptime(Date.now() - b.startedAt)}`;
+}
+
 // --- Target discovery via CDP -------------------------------------------
 
 function useTargets(baseUrl: string, browserId: string | null) {
   const [targets, setTargets] = useState<CdpTarget[]>([]);
+  // Which browser `targets` currently describes. Reset alongside `targets`
+  // so the two can never disagree. Callers need this because `browserId`
+  // changes during render while `targets` only catches up when this hook's
+  // effect runs — for one commit the two refer to different browsers, and
+  // acting on that mismatch files one browser's pages under another's id.
+  const [targetsBrowserId, setTargetsBrowserId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const msgIdRef = useRef(1);
@@ -590,6 +698,7 @@ function useTargets(baseUrl: string, browserId: string | null) {
 
   useEffect(() => {
     setTargets([]);
+    setTargetsBrowserId(browserId);
     setConnected(false);
     setError(null);
     wsRef.current = null;
@@ -659,7 +768,7 @@ function useTargets(baseUrl: string, browserId: string | null) {
     ws.send(JSON.stringify({ id, method, params: params ?? {} }));
   }, []);
 
-  return { targets, connected, error, sendCommand };
+  return { targets, targetsBrowserId, connected, error, sendCommand };
 }
 
 // IMPORTANT: insertion order is meaningful. The auto-select-newest-page
@@ -705,18 +814,51 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 50,
     boxShadow: '-4px 0 16px rgba(0,0,0,0.5)',
   },
-  chevronButton: {
+  // Pinned at the strip's left edge. The heavier right border separates the
+  // "which browser" control from the page chips that follow it, so the two
+  // levels don't read as one flat row of tabs.
+  switcherButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    maxWidth: '150px',
+    height: '100%',
+    padding: '6px 10px',
+    background: 'transparent',
+    color: 'var(--text-muted)',
+    border: 'none',
+    borderRight: '2px solid var(--border)',
+    cursor: 'pointer',
+    fontSize: '12px',
+    flexShrink: 0,
+  },
+  switcherLabel: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    minWidth: 0,
+  },
+  newTabButton: {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: '6px',
-    padding: '2px 4px',
+    width: '30px',
+    height: '100%',
     background: 'transparent',
-    color: 'currentColor',
+    color: 'var(--text-muted)',
     border: 'none',
+    borderRight: '1px solid var(--border)',
     cursor: 'pointer',
-    opacity: 0.65,
-    borderRadius: '3px',
+    flexShrink: 0,
+  },
+  stripHint: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 12px',
+    color: 'var(--text-muted)',
+    fontSize: '12px',
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
   },
   tabsSpacer: { flex: 1 },
   closeButton: {
@@ -775,21 +917,6 @@ const S: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
     marginTop: '2px',
   },
-  dropdownItemClose: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '20px',
-    height: '20px',
-    padding: 0,
-    background: 'transparent',
-    color: 'currentColor',
-    border: 'none',
-    borderRadius: '3px',
-    cursor: 'pointer',
-    opacity: 0.6,
-    flexShrink: 0,
-  },
   body: {
     flex: 1,
     display: 'flex',
@@ -801,15 +928,29 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'row' as const,
     alignItems: 'stretch',
-    overflowX: 'auto' as const,
+    // The chips scroll inside tabsScroller, not here — otherwise the browser
+    // switcher, the new-page button and the close button scroll off with them,
+    // and macOS renders no scrollbar to hint that they are still reachable.
+    overflowX: 'hidden' as const,
     background: 'var(--bg-secondary)',
     borderBottom: '1px solid var(--border)',
     flexShrink: 0,
     height: 'var(--tab-height)',
   },
+  // `0 1 auto`: sized to its chips, so the new-page button sits right after
+  // the last one as it does in a real tab bar, but free to shrink (and start
+  // scrolling) once the chips outgrow the panel.
+  tabsScroller: {
+    display: 'flex',
+    alignItems: 'stretch',
+    flex: '0 1 auto',
+    overflowX: 'auto' as const,
+    minWidth: 0,
+  },
   tab: {
     display: 'flex',
     alignItems: 'center',
+    gap: '6px',
     maxWidth: '180px',
     padding: '6px 12px',
     background: 'transparent',
@@ -832,6 +973,25 @@ const S: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
     minWidth: 0,
   },
+  tabClose: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '16px',
+    height: '16px',
+    padding: 0,
+    background: 'transparent',
+    color: 'currentColor',
+    border: 'none',
+    borderRadius: '3px',
+    cursor: 'pointer',
+    opacity: 0.6,
+    flexShrink: 0,
+  },
+  // `visibility` rather than unmounting or `display: none`: those reflow the
+  // chip, so it would change width as the pointer crosses it. (All three keep
+  // the button out of the tab order, so that is not what decides it.)
+  tabCloseHidden: { visibility: 'hidden' as const },
   empty: {
     display: 'flex',
     alignItems: 'center',
