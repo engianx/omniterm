@@ -6,6 +6,7 @@ import {
   nextSelection,
   pickTargetAfterClose,
   promoteMru,
+  pruneSelectionState,
   type SelectionState,
 } from './pageSelection.js';
 
@@ -336,4 +337,94 @@ test('bookkeeping for a browser that goes away is dropped', () => {
     liveBrowserIds: ['B2'],
   });
   assert.equal(after.state.browsers.B1, undefined);
+});
+
+// --- carried-over selections across a switch -----------------------------
+
+// Raised in review on #13. Rule 3 ("the active page went away") is checked
+// before rule 2 ("no active page yet") and fires on any selectedTargetId
+// missing from pageIds — including one belonging to the browser the user just
+// left. That made the landing page depend on whether the destination happened
+// to have a remembered stack, and left the documented "first page" behaviour
+// holding only because a separate effect zeroes the selection first.
+test('a selection held over from the previous browser lands on the first page', () => {
+  assert.deepEqual(
+    nextSelection({
+      justSwitchedBrowser: true,
+      prevIds: ['p1', 'p2', 'p3'],
+      pageIds: ['p1', 'p2', 'p3'],
+      selectedTargetId: 'q1',
+      mru: ['p3', 'p1'],
+    }),
+    { kind: 'select', targetId: 'p1' },
+  );
+});
+
+test('a held-over selection does not consult the destination stack', () => {
+  // Same as above with no remembered stack: the answer must not differ.
+  assert.deepEqual(
+    nextSelection({
+      justSwitchedBrowser: true,
+      prevIds: [],
+      pageIds: ['p1', 'p2'],
+      selectedTargetId: 'q1',
+      mru: [],
+    }),
+    { kind: 'select', targetId: 'p1' },
+  );
+});
+
+test('a page closing is still recency-resolved when no switch happened', () => {
+  assert.deepEqual(
+    nextSelection({
+      justSwitchedBrowser: false,
+      prevIds: ['p1', 'p2', 'p3'],
+      pageIds: ['p1', 'p2'],
+      selectedTargetId: 'p3',
+      mru: ['p3', 'p1'],
+    }),
+    { kind: 'select', targetId: 'p1' },
+  );
+});
+
+// The sequence version: switch away and back WITHOUT the caller zeroing the
+// selection, which is the contract the effect ordering used to carry.
+test('switching back without a selection reset still lands on the first page', () => {
+  const onB1 = {
+    browserId: 'B1',
+    pageIds: ['p1', 'p2', 'p3'],
+    targetsBrowserId: 'B1',
+    targetsLoaded: true,
+  };
+  const first = drive([
+    ...switchTo('B1', ['p1', 'p2', 'p3'], null),
+    { ...onB1, clickTo: 'p3' },
+    onB1,
+  ]);
+  assert.deepEqual(first.state.browsers.B1?.mru, ['p3']);
+  const round = drive(
+    [...switchTo('B2', ['q1'], 'B1'), ...switchTo('B1', ['p1', 'p2', 'p3'], 'B2')],
+    { state: first.state, selectedTargetId: first.selectedTargetId },
+  );
+  assert.equal(round.selectedTargetId, 'p1');
+});
+
+// --- pruneSelectionState -------------------------------------------------
+
+test('pruneSelectionState drops entries for browsers that are gone', () => {
+  const state: SelectionState = {
+    browsers: { B1: { prevIds: ['p1'], mru: ['p1'] }, B2: { prevIds: ['q1'], mru: [] } },
+    lastBrowserId: 'B1',
+  };
+  const pruned = pruneSelectionState(state, ['B2']);
+  assert.equal(pruned.browsers.B1, undefined);
+  assert.deepEqual(pruned.browsers.B2?.prevIds, ['q1']);
+});
+
+test('pruneSelectionState clears everything when no browsers remain', () => {
+  const state: SelectionState = {
+    browsers: { B1: { prevIds: ['p1'], mru: ['p1'] } },
+    lastBrowserId: 'B1',
+  };
+  assert.deepEqual(pruneSelectionState(state, []).browsers, {});
 });

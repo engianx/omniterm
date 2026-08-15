@@ -104,7 +104,21 @@ export function nextSelection(input: {
   /** MRU stack for this browser, most-recent-first. */
   mru: readonly string[];
 }): SelectionOutcome {
-  const { justSwitchedBrowser, prevIds, pageIds, selectedTargetId, mru } = input;
+  const { justSwitchedBrowser, prevIds, pageIds, mru } = input;
+
+  // A page id held over from the browser the user just left is not a
+  // selection in this browser. Normalise it away rather than letting the
+  // "active page went away" case below read it as a page that was closed
+  // here — that case consults this browser's recency and would land on
+  // whatever the user last viewed, which is neither the documented
+  // behaviour nor reachable consistently (it only happens when the browser
+  // has a remembered stack). The caller does zero the selection on a switch
+  // in a separate effect, but relying on that leaves the rule correct only
+  // by arrangement, and effect ordering is what broke this code twice.
+  const selectedTargetId =
+    justSwitchedBrowser && input.selectedTargetId && !pageIds.includes(input.selectedTargetId)
+      ? null
+      : input.selectedTargetId;
 
   // A page was added while the user was watching — show them what just
   // opened, which is what they want after `$BROWSER url`. mergeTargets is
@@ -145,6 +159,28 @@ export interface SelectionState {
 export const emptySelectionState: SelectionState = { browsers: {}, lastBrowserId: null };
 
 /**
+ * Drop bookkeeping for browsers that are no longer registered, so a future
+ * browser reusing an id cannot inherit a stale order. Ids are reused in
+ * practice: the registry hands them out from a per-process counter, so a
+ * host restart starts again at "1".
+ *
+ * Callers must run this even when no browser is selected — that is exactly
+ * the state a registry goes through when its last browser disappears, and
+ * skipping it there is how the entry survives to be inherited.
+ */
+export function pruneSelectionState(
+  state: SelectionState,
+  liveBrowserIds: readonly string[],
+): SelectionState {
+  const live = new Set(liveBrowserIds);
+  const browsers: Record<string, BrowserSelectionState> = {};
+  for (const [id, entry] of Object.entries(state.browsers)) {
+    if (live.has(id)) browsers[id] = entry;
+  }
+  return { browsers, lastBrowserId: state.lastBrowserId };
+}
+
+/**
  * Advance the browser view's page-selection state by one observation.
  *
  * This owns the *sequencing* around `nextSelection`: which observations are
@@ -180,14 +216,8 @@ export function advanceSelection(
 ): { state: SelectionState; outcome: SelectionOutcome } {
   const { browserId, pageIds, selectedTargetId, targetsBrowserId, targetsLoaded } = input;
 
-  // Drop bookkeeping for browsers that are gone, so a future browser reusing
-  // an id (after a host restart, say) cannot inherit a stale order.
-  const live = new Set(input.liveBrowserIds);
-  const browsers: Record<string, BrowserSelectionState> = {};
-  for (const [id, entry] of Object.entries(state.browsers)) {
-    if (live.has(id)) browsers[id] = entry;
-  }
-  const pruned: SelectionState = { browsers, lastBrowserId: state.lastBrowserId };
+  const pruned = pruneSelectionState(state, input.liveBrowserIds);
+  const browsers = pruned.browsers;
 
   if (targetsBrowserId !== browserId || !targetsLoaded) {
     return { state: pruned, outcome: { kind: 'idle' } };

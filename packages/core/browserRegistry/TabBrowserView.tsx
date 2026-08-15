@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { ResizeHandle, type DragInfo } from '../app/components/ResizeHandle';
 import type { BrowserInspectorPosition } from '../lib/settings';
-import { advanceSelection, emptySelectionState } from './pageSelection';
+import { advanceSelection, emptySelectionState, pruneSelectionState } from './pageSelection';
 
 export interface Browser {
   id: string;
@@ -283,7 +283,16 @@ export default function TabBrowserView({
   const selectionRef = useRef(emptySelectionState);
   useEffect(() => {
     if (!selected) {
-      selectionRef.current = { ...selectionRef.current, lastBrowserId: null };
+      // Still prune here: no browser selected is precisely the state a tab
+      // passes through when its last browser goes away, and advanceSelection
+      // (the other pruner) is not reached on this path.
+      selectionRef.current = {
+        ...pruneSelectionState(
+          selectionRef.current,
+          browsers.map((b) => b.id),
+        ),
+        lastBrowserId: null,
+      };
       setSelectedTargetId(null);
       return;
     }
