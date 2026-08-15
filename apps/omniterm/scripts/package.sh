@@ -7,7 +7,9 @@
 #   3. Assemble standalone/ — the actual artifact that ships:
 #        standalone/server/server.js   ← tsup bundle
 #        standalone/client/            ← @omniterm/core/dist/client/
-#        standalone/public/            ← @omniterm/core/public/
+#      (no standalone/public/: vite's publicDir already copies
+#       @omniterm/core/public/* into dist/client/, and startServer mounts
+#       clientDir first, so a second copy could never be served.)
 #   4. Copy bin/omniterm-browser.js + bin/xdg-open from @omniterm/core/bin/
 #      into apps/omniterm/bin/ so OMNITERM_BIN_DIR's package.json walk-up
 #      finds them at runtime.
@@ -20,8 +22,7 @@
 #   bin/omniterm-browser.js     system-browser shim (used by tab tmux env)
 #   bin/xdg-open                 xdg-open shim (PATH-injected in tabs)
 #   standalone/server/server.js  bundled server entry
-#   standalone/client/           vite build output
-#   standalone/public/           static manifest etc.
+#   standalone/client/           vite build output, incl. static public assets
 
 set -euo pipefail
 

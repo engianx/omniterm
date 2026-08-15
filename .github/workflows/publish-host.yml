@@ -231,7 +231,10 @@ jobs:
               exit 1
             fi
           done
-          for d in standalone/client standalone/public; do
+          # standalone/public is deliberately absent: vite's publicDir copies
+          # core/public/* into the client bundle, so shipping it again was a
+          # byte-for-byte duplicate that startServer's clientDir mount shadowed.
+          for d in standalone/client; do
             if [ ! -d "$d" ] || [ -z "$(ls -A "$d")" ]; then
               printf '::%s::%s\n' error "Missing or empty directory: $d"
               exit 1
