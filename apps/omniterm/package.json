@@ -1,6 +1,6 @@
 {
   "name": "@omniterm/host",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "description": "omniterm — a generic, browser-based dev host: persistent terminals, a browser-view panel, workspace management, and a runtime plugin API. CLI: omniterm.",
   "license": "MIT",
   "type": "module",
