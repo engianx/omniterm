@@ -34,6 +34,11 @@ export const MAX_INITIAL_COMMAND_LEN = 4096;
 // words, so an unbounded map would hit OS arg-length limits.
 export const MAX_ENV_VARS = 32;
 export const MAX_ENV_VALUE_LEN = 4096;
+// The NAME is bounded too: it lands in the `-e NAME=value` argv AND, unlike the
+// value, in the `for v in …` line of the generated wrapper script that becomes
+// the session's default-command. The name charset has no length limit of its
+// own, so without this the only ceiling is Express's body-size default.
+export const MAX_ENV_NAME_LEN = 256;
 
 /**
  * Validate the optional per-session `env` map (spec 001). Returns the map to
@@ -57,6 +62,9 @@ function parseSessionEnv(raw: unknown): { env?: Record<string, string> } | { err
   }
   const env: Record<string, string> = {};
   for (const [key, value] of entries) {
+    if (key.length > MAX_ENV_NAME_LEN) {
+      return { error: `env variable names must be at most ${MAX_ENV_NAME_LEN} characters` };
+    }
     try {
       assertValidEnvName(key);
     } catch (e) {
