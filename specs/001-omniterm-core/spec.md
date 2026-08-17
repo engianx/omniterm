@@ -116,6 +116,15 @@ roots.
   the optional presentation shim fails open to the unmodified frontend.
 - A tracked repo directory disappears → workspace listing degrades gracefully
   (the missing repo does not block access checks for others).
+- A caller supplies a variable name the host needs for itself, or one carrying
+  shell metacharacters → rejected outright. Names reach a shell script that
+  starts every pane of that terminal, so an unchecked name is code execution,
+  not a formatting problem.
+- A variable named at startup changes value while the host is running → new
+  terminals still receive the old value, because it is resolved from the
+  terminal backend's environment and that backend outlives the host process. A
+  value that rotates belongs in the user's login profile, which every terminal
+  re-reads as it opens.
 
 ## Requirements *(mandatory)*
 
@@ -151,11 +160,45 @@ roots.
   the DevTools frontend served by the inspected Chromium and MAY apply a small,
   fail-open presentation shim. `OMNITERM_DEVTOOLS_DIR` MAY supply a custom
   frontend without making that frontend a host dependency.
+- **FR-010**: Every terminal MUST start from a scrubbed environment: an
+  allowlist of variables the host names (terminal/locale/session basics, the
+  ssh-agent socket, desktop-session variables, and the host's own per-tab
+  variables), and nothing else from the environment the host was launched in.
+  The shell then runs as a login shell so the user's profiles rebuild the rest.
+  This applies to every pane equally, including panes created inside a session
+  by splitting or opening a window.
+- **FR-011**: The host MUST accept, at startup, a list of variable **names** to
+  add to that allowlist, given as a CLI flag or an environment variable. It MUST
+  NOT accept values through this path: the value is read from the host's own
+  environment, and the host MUST NOT persist, log, or return it. A name that is
+  listed but unset MUST stay unset in the terminal rather than becoming an empty
+  value. The host MUST expose the accepted names — and only the names — for
+  readback, and MUST document that these values are resolved from the terminal
+  backend's environment, that the backend can outlive the host process, and that
+  the host does not refresh them.
+- **FR-012**: A caller creating a terminal over HTTP MUST be able to supply
+  variable **values** for that terminal alone. They MUST apply to the terminal's
+  initial command, to the shell the pane returns to when that command exits, and
+  to panes split from it — and to no other terminal. A request that re-attaches
+  an existing terminal MUST NOT apply them, matching the initial-command
+  contract. The host MUST document that these values are visible on the machine
+  (process arguments, terminal-backend environment) and are therefore for
+  configuration rather than secrets.
+- **FR-013**: Variable names supplied through either path MUST be validated as
+  POSIX-shaped names and MUST NOT be names the host needs for itself. An invalid
+  name MUST be rejected, never sanitized: per request, reject the whole request
+  and create nothing; at startup, fail to start naming the offending entry rather
+  than dropping it silently. Where the same name arrives both ways, the
+  per-terminal value MUST be the one the terminal sees; the user's login profile
+  runs afterwards and has the last word.
 
 ### Key Entities
 
 - **Terminal session**: a persistent shell (tmux session + ttyd), keyed by tab
-  id, with its own layout/panes and injected environment.
+  id, with its own layout/panes and injected environment. That environment is
+  composed, in increasing precedence, of the host's allowlist, any names the
+  operator added at startup, any values the creating caller supplied for this
+  terminal, and finally whatever the user's login profile sets.
 - **Browser entry / view**: a registered CDP endpoint (cdpUrl, label, pid)
   belonging to a tab, presented to the client as a view with proxied DevTools.
 - **Workspace item**: a tracked repo or directory, with its git worktrees.
@@ -185,6 +228,16 @@ roots.
 - **SC-007**: Browser panel display mode and inspector placement apply without a
   host restart, survive reload, and produce all supported dock/overlay and
   hidden/right/bottom layouts.
+- **SC-008**: A variable set in the launching shell but not named by the host is
+  absent from every terminal; a variable named at startup is present in every
+  newly opened terminal — UI-created, API-created, and split — and its value
+  appears in no log line and no API response.
+- **SC-009**: A value supplied for one terminal is readable in that terminal's
+  shell after its initial command has exited and in a pane split from it, and is
+  absent from a terminal created without it.
+- **SC-010**: Every name in a metacharacter fuzz list (quote, double quote,
+  space, `;`, `$`, backtick, newline, leading digit, empty) is rejected at both
+  entry points, with no terminal created.
 
 ## Assumptions
 
