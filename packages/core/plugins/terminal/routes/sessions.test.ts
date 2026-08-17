@@ -23,6 +23,7 @@ const {
   MAX_INITIAL_COMMAND_LEN,
   MAX_ENV_VARS,
   MAX_ENV_VALUE_LEN,
+  MAX_ENV_NAME_LEN,
   bucketDiscoveredSessions,
 } = await import('./sessions.js');
 const { setEnvPassthrough } = await import('../../../lib/sessionEnv.js');
@@ -208,6 +209,9 @@ test('POST /create-session rejects malformed env shapes and oversized values', a
       { OK: 1 },
       { OK: null },
       { OK: 'x'.repeat(MAX_ENV_VALUE_LEN + 1) },
+      // A valid-charset name with no length bound would still reach the tmux
+      // argv and the generated wrapper script.
+      { ['A'.repeat(MAX_ENV_NAME_LEN + 1)]: 'x' },
       { OK: 'has\0nul' },
       Object.fromEntries(Array.from({ length: MAX_ENV_VARS + 1 }, (_, i) => [`V${i}`, 'x'])),
     ];
