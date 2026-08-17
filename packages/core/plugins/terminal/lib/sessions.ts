@@ -88,6 +88,23 @@ export function buildTabEnv(registryUrl: string): Record<string, string> {
   return env;
 }
 
+/**
+ * The full environment stamped on a new session: omniterm's own per-tab vars,
+ * then the values the creating caller supplied for this terminal (spec 001
+ * FR-012), which win on a collision. The user's login profile runs after all of
+ * this and has the last word on any name it sets.
+ *
+ * Kept as a named function rather than an inline spread at the call site so the
+ * precedence is pinned by a test — a reversed spread would silently let
+ * omniterm's own defaults override what the caller asked for.
+ */
+export function buildSessionEnv(
+  registryUrl: string,
+  callerEnv?: Record<string, string>,
+): Record<string, string> {
+  return { ...buildTabEnv(registryUrl), ...callerEnv };
+}
+
 export interface Session {
   id: string;
   worktreeId: string;

@@ -17,8 +17,15 @@ const settingsDir = mkdtempSync(path.join(tmpdir(), 'omniterm-sessions-route-'))
 process.env.SETTINGS_DIR = settingsDir;
 process.on('exit', () => rmSync(settingsDir, { recursive: true, force: true }));
 
-const { sessionsRouter, MAX_SESSION_NAME_LEN, MAX_INITIAL_COMMAND_LEN, bucketDiscoveredSessions } =
-  await import('./sessions.js');
+const {
+  sessionsRouter,
+  MAX_SESSION_NAME_LEN,
+  MAX_INITIAL_COMMAND_LEN,
+  MAX_ENV_VARS,
+  MAX_ENV_VALUE_LEN,
+  bucketDiscoveredSessions,
+} = await import('./sessions.js');
+const { setEnvPassthrough } = await import('../../../lib/sessionEnv.js');
 
 async function withServer<T>(fn: (base: string) => Promise<T>): Promise<T> {
   const app = express();
@@ -162,5 +169,69 @@ test('DELETE /sessions/:id returns 404 for an unknown session', async () => {
   await withServer(async (base) => {
     const res = await fetch(`${base}/sessions/does-not-exist`, { method: 'DELETE' });
     assert.equal(res.status, 404);
+  });
+});
+
+// --- spec 001: per-session env --------------------------------------------
+//
+// These assert the rejection paths, which return before any tmux call. The
+// accepted path needs a real tmux server and is covered in
+// lib/tmux.integration.test.ts.
+
+test('POST /create-session rejects env names that could break out of the wrapper', async () => {
+  await withServer(async (base) => {
+    for (const key of ['1BAD', 'has space', "quo'te", 'semi;colon', 'dash-ed', '$(id)']) {
+      const res = await createSession(base, { cwd: '/tmp', env: { [key]: 'v' } });
+      assert.equal(res.status, 400, `expected 400 for env name ${JSON.stringify(key)}`);
+      const body = (await res.json()) as { error: string };
+      assert.match(body.error, /not a valid environment variable name/);
+    }
+  });
+});
+
+test('POST /create-session rejects env names omniterm reserves', async () => {
+  await withServer(async (base) => {
+    for (const key of ['TMUX', 'TMUX_PANE']) {
+      const res = await createSession(base, { cwd: '/tmp', env: { [key]: 'v' } });
+      assert.equal(res.status, 400);
+      const body = (await res.json()) as { error: string };
+      assert.match(body.error, /reserved/);
+    }
+  });
+});
+
+test('POST /create-session rejects malformed env shapes and oversized values', async () => {
+  await withServer(async (base) => {
+    const cases: unknown[] = [
+      'A=B',
+      ['A'],
+      { OK: 1 },
+      { OK: null },
+      { OK: 'x'.repeat(MAX_ENV_VALUE_LEN + 1) },
+      { OK: 'has\0nul' },
+      Object.fromEntries(Array.from({ length: MAX_ENV_VARS + 1 }, (_, i) => [`V${i}`, 'x'])),
+    ];
+    for (const env of cases) {
+      const res = await createSession(base, { cwd: '/tmp', env });
+      assert.equal(res.status, 400, `expected 400 for env ${JSON.stringify(env).slice(0, 40)}`);
+    }
+  });
+});
+
+test('GET /session-env reports the configured names and never a value', async () => {
+  await withServer(async (base) => {
+    const empty = await (await fetch(`${base}/session-env`)).json();
+    assert.deepEqual(empty, { passthrough: [] });
+
+    try {
+      setEnvPassthrough(['MY_TOKEN', 'MY_BASE_URL']);
+      const res = await fetch(`${base}/session-env`);
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { passthrough: string[] };
+      assert.deepEqual(body.passthrough, ['MY_TOKEN', 'MY_BASE_URL']);
+      assert.deepEqual(Object.keys(body), ['passthrough']);
+    } finally {
+      setEnvPassthrough([]);
+    }
   });
 });

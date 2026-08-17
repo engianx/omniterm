@@ -4,8 +4,10 @@
 import {
   startServer,
   parsePluginSpecs,
+  parseEnvPassthroughArgv,
   validatePluginModule,
   PluginSpecError,
+  EnvNameError,
   type TabTypePlugin,
 } from '@omniterm/core';
 import { existsSync } from 'node:fs';
@@ -115,5 +117,17 @@ try {
   if (err instanceof PluginSpecError) fail(err.spec, err.message);
   throw err;
 }
+// --- Session env (--env-passthrough <names>, repeatable) -------------------
+// Names only: the values stay in this process's environment, are inherited by
+// the terminal backend, and are read there when a pane starts. A bad list fails
+// the boot rather than starting terminals that silently lack the configuration.
+let envPassthrough: string[];
+try {
+  envPassthrough = parseEnvPassthroughArgv(process.argv.slice(2));
+} catch (err) {
+  if (err instanceof EnvNameError) fail(null, `--env-passthrough: ${err.message}`);
+  throw err;
+}
+
 const plugins = await loadPlugins(specs);
-await startServer({ port, devtoolsBundleDir, pdfjsDistDir, plugins });
+await startServer({ port, devtoolsBundleDir, pdfjsDistDir, plugins, envPassthrough });

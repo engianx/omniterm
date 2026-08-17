@@ -41,6 +41,10 @@ Options:
   --host <host>        Bind address (default: 0.0.0.0, env: OMNITERM_HOST)
   --ttyd-ports <range> Internal port range for terminals (default: 7700-7799)
   --plugin <path|name> Load a plugin by path or package name (repeatable)
+  --env-passthrough <names>
+                       Comma-separated variable NAMES that may cross into
+                       terminals, on top of the default allowlist (repeatable;
+                       env: OMNITERM_ENV_PASSTHROUGH, which overrides)
   --no-telemetry       Disable telemetry for this run only
   --version, -v        Print version and exit
   --help, -h           Show this help
@@ -195,9 +199,13 @@ for (const cmd of ['ttyd', 'tmux']) {
 
 console.log(`[omniterm] Starting on http://${HOST}:${PORT}`);
 
-const pluginArgs = collectFlag('--plugin');
+// Flags forwarded VERBATIM to the server entry, which parses them. Everything
+// else the launcher understands is translated into an env var below instead.
+// Anything not listed here never reaches the server: the argv it sees is only
+// what this array passes on.
+const forwardedArgs = [...collectFlag('--plugin'), ...collectFlag('--env-passthrough')];
 
-const child = spawn(process.execPath, [serverEntry, ...pluginArgs], {
+const child = spawn(process.execPath, [serverEntry, ...forwardedArgs], {
   env: {
     ...process.env,
     OMNITERM_PORT: String(PORT),

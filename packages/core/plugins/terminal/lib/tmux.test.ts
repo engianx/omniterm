@@ -4,10 +4,12 @@ import { homedir, tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
   buildNewSessionArgs,
+  buildCleanEnvScript,
   buildDefaultCommand,
   CLEAN_ENV_SCRIPT,
   CLEAN_ENV_VARS,
 } from './tmux.js';
+import { setEnvPassthrough } from '../../../lib/sessionEnv.js';
 
 test('buildNewSessionArgs: bare shell runs through the clean-env wrapper', () => {
   assert.deepEqual(buildNewSessionArgs('sess', 'bash', '/w'), [
@@ -46,6 +48,9 @@ test('buildNewSessionArgs: initialCommand is appended as the wrapper $2', () => 
 });
 
 test('buildNewSessionArgs: env vars are stamped via -e ahead of the wrapper', () => {
+  // The stamped names are also allowlisted in the wrapper (spec 001) — stamping
+  // alone would set them on the tmux session only for `env -i` to drop them
+  // again at the pane.
   assert.deepEqual(
     buildNewSessionArgs('s', 'zsh', '/w', { FOO: 'bar' }, { initialCommand: 'run' }),
     [
@@ -59,7 +64,7 @@ test('buildNewSessionArgs: env vars are stamped via -e ahead of the wrapper', ()
       'FOO=bar',
       'sh',
       '-c',
-      CLEAN_ENV_SCRIPT,
+      buildCleanEnvScript(['FOO']),
       'omniterm-clean-env',
       'zsh',
       'run',
@@ -202,4 +207,92 @@ test('clean-env wrapper: trailing backslash cannot line-continue into the exec',
   const lines = out.split('\n').map((l) => l.trim());
   assert.ok(lines.includes('tb-unit'), `expected clean "tb-unit" line, got: ${out}`);
   assert.ok(!out.includes('tb-unit exec'), 'exec line was swallowed by the trailing backslash');
+});
+
+// --- spec 001: session environment ----------------------------------------
+
+/** The wrapper script out of a `tmux new-session` argv (the word before $0). */
+function wrapperScript(args: string[]): string {
+  return args[args.indexOf('omniterm-clean-env') - 1]!;
+}
+
+test('buildCleanEnvScript with no extras is exactly the shipped wrapper', () => {
+  // The scrub is the default; configuring nothing must change nothing.
+  assert.equal(buildCleanEnvScript(), CLEAN_ENV_SCRIPT);
+  assert.equal(buildCleanEnvScript([]), CLEAN_ENV_SCRIPT);
+});
+
+test('buildCleanEnvScript appends extras once, de-duplicated against the base list', () => {
+  const script = buildCleanEnvScript(['MY_TOKEN', 'MY_TOKEN', 'PATH', 'OTHER']);
+  const forLine = script.split('\n').find((l) => l.startsWith('for v in'))!;
+  const names = forLine.replace('for v in ', '').replace('; do', '').split(' ');
+  assert.equal(names.filter((n) => n === 'MY_TOKEN').length, 1);
+  assert.equal(names.filter((n) => n === 'PATH').length, 1, 'PATH is already in the base list');
+  assert.deepEqual(names.slice(0, CLEAN_ENV_VARS.length), CLEAN_ENV_VARS);
+  assert.deepEqual(names.slice(CLEAN_ENV_VARS.length), ['MY_TOKEN', 'OTHER']);
+});
+
+test('buildCleanEnvScript stays single-quote free with extras', () => {
+  // buildDefaultCommand embeds the script in a single-quoted sh -c string.
+  assert.ok(!buildCleanEnvScript(['MY_TOKEN', 'OTHER']).includes("'"));
+});
+
+test('buildDefaultCommand carries the same extras, so splits are not a downgrade', () => {
+  assert.equal(
+    buildDefaultCommand('bash', ['MY_TOKEN']),
+    `exec /bin/sh -c '${buildCleanEnvScript(['MY_TOKEN'])}' omniterm-clean-env 'bash'`,
+  );
+});
+
+test('buildNewSessionArgs stamps a per-session env and allowlists its names', () => {
+  const args = buildNewSessionArgs('sess', 'bash', '/w', { MY_CONTEXT: 'abc' });
+  assert.ok(args.includes('-e'));
+  assert.ok(args.includes('MY_CONTEXT=abc'));
+  // Stamping alone is not enough: without the allowlist entry `env -i` would
+  // drop the value again at the pane. That is the bug this feature fixes.
+  assert.equal(wrapperScript(args), buildCleanEnvScript(['MY_CONTEXT']));
+});
+
+test('buildNewSessionArgs allowlists the host passthrough names too', () => {
+  try {
+    setEnvPassthrough(['MY_TOKEN']);
+    const args = buildNewSessionArgs('sess', 'bash', '/w', { MY_CONTEXT: 'abc' });
+    // Passthrough first (host-level), then the session's own names.
+    assert.equal(wrapperScript(args), buildCleanEnvScript(['MY_TOKEN', 'MY_CONTEXT']));
+    // Passthrough is names-only: no value for it is stamped into the argv.
+    assert.ok(!args.some((a) => a.startsWith('MY_TOKEN=')));
+  } finally {
+    setEnvPassthrough([]);
+  }
+});
+
+test('buildNewSessionArgs is byte-identical to before when nothing is configured', () => {
+  assert.equal(wrapperScript(buildNewSessionArgs('sess', 'bash', '/w')), CLEAN_ENV_SCRIPT);
+});
+
+test('clean-env wrapper: an extra name survives, an unlisted one does not', () => {
+  // The behavioral proof, through a real sh, that widening the list works and
+  // that widening it for one name does not widen it for everything.
+  const out = execFileSync(
+    'sh',
+    [
+      '-c',
+      buildCleanEnvScript(['MY_TOKEN']),
+      'omniterm-clean-env',
+      '/bin/sh',
+      'env; exit 0',
+    ],
+    {
+      encoding: 'utf-8',
+      env: {
+        HOME: tmpdir(),
+        PATH: '/usr/bin:/bin',
+        MY_TOKEN: 'shhh',
+        MY_OTHER_TOKEN: 'also-shhh',
+      },
+    },
+  );
+  const lines = out.split('\n');
+  assert.ok(lines.includes('MY_TOKEN=shhh'));
+  assert.ok(!lines.some((l) => l.startsWith('MY_OTHER_TOKEN=')));
 });

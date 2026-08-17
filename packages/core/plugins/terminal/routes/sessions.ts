@@ -7,7 +7,7 @@ import {
   deleteSession,
   adoptSession,
   listSessions,
-  buildTabEnv,
+  buildSessionEnv,
   ensureSessionTtydReady,
   unregisterSession,
   type Session,
@@ -21,6 +21,7 @@ import {
 import { loadSettings } from '../../../lib/settings.js';
 import { trackSessionCreated } from '../../../lib/telemetry.js';
 import { listRepos } from '../../../lib/repos.js';
+import { assertValidEnvName, EnvNameError, getEnvPassthrough } from '../../../lib/sessionEnv.js';
 
 const execFileAsync = promisify(execFile);
 const DISCOVERY_COMMAND_TIMEOUT_MS = 5000;
@@ -29,6 +30,47 @@ const DISCOVERY_COMMAND_TIMEOUT_MS = 5000;
 // argv, so a huge value could hit OS arg-length limits.
 export const MAX_SESSION_NAME_LEN = 128;
 export const MAX_INITIAL_COMMAND_LEN = 4096;
+// Bound the per-session `env` map: its entries become `tmux -e KEY=VALUE` argv
+// words, so an unbounded map would hit OS arg-length limits.
+export const MAX_ENV_VARS = 32;
+export const MAX_ENV_VALUE_LEN = 4096;
+
+/**
+ * Validate the optional per-session `env` map (spec 001). Returns the map to
+ * stamp on the session, or a message describing the first problem found — the
+ * caller then rejects the whole request, so a caller's environment is never
+ * half-applied.
+ *
+ * NOTE for callers: these values travel in the tmux server's argv and are
+ * readable through `ps` and `tmux show-environment`. They are for per-terminal
+ * configuration, not secrets; a secret belongs in the host's own environment
+ * plus `--env-passthrough`, whose values never appear in an argv.
+ */
+function parseSessionEnv(raw: unknown): { env?: Record<string, string> } | { error: string } {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return { error: 'env must be an object mapping variable names to string values' };
+  }
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > MAX_ENV_VARS) {
+    return { error: `env accepts at most ${MAX_ENV_VARS} variables` };
+  }
+  const env: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    try {
+      assertValidEnvName(key);
+    } catch (e) {
+      return { error: e instanceof EnvNameError ? e.message : String(e) };
+    }
+    if (typeof value !== 'string') return { error: `env.${key} must be a string` };
+    if (value.length > MAX_ENV_VALUE_LEN) {
+      return { error: `env.${key} exceeds ${MAX_ENV_VALUE_LEN} characters` };
+    }
+    if (value.includes('\0')) return { error: `env.${key} must not contain a NUL byte` };
+    env[key] = value;
+  }
+  return { env };
+}
 
 export const sessionsRouter: Router = Router();
 
@@ -82,6 +124,15 @@ async function adoptOrAttach(name: string, res: Response, existing?: Session): P
     res.status(503).json({ error: e instanceof Error ? e.message : String(e) });
   }
 }
+
+/**
+ * The effective host-level passthrough configuration (spec 001 FR-011): the
+ * accepted NAMES only. Values are deliberately absent — the whole point of
+ * configuring by name is that the host never handles, stores, or echoes them.
+ */
+sessionsRouter.get('/session-env', (_req, res) => {
+  res.json({ passthrough: getEnvPassthrough() });
+});
 
 sessionsRouter.get('/sessions/:sessionId', (req, res) => {
   const session = getSession(req.params.sessionId);
@@ -146,6 +197,15 @@ sessionsRouter.post('/create-session', async (req, res) => {
     return;
   }
 
+  // Per-session environment (spec 001). Validated BEFORE the create-or-adopt
+  // branch so a malformed request is rejected whichever way it would have gone;
+  // a well-formed map is applied only on create (see below).
+  const parsedEnv = parseSessionEnv(req.body?.env);
+  if ('error' in parsedEnv) {
+    res.status(400).json({ error: parsedEnv.error });
+    return;
+  }
+
   // Create-or-adopt: reuse an existing session for a stable name rather than
   // spawning a duplicate, so a re-click lands back in the same session (the
   // command ran on first create and is NOT re-run). getSession doubles as
@@ -155,6 +215,8 @@ sessionsRouter.post('/create-session', async (req, res) => {
   if (requestedName) {
     const registered = getSession(requestedName);
     if (registered || tmuxSessionExists(requestedName)) {
+      // Re-attach applies neither `initialCommand` nor `env` — the session
+      // already exists and keeps the environment it was created with.
       // When `registered` is undefined here the tmux session exists but isn't in
       // the registry (e.g. after a host restart); adoptAndReady re-runs
       // getSession, but that's a cheap registry miss (no tmux exec) before it
@@ -179,7 +241,7 @@ sessionsRouter.post('/create-session', async (req, res) => {
     const t0 = Date.now();
     const host = req.headers.host ?? '127.0.0.1:17716';
     const registryUrl = `http://${host}/t/${name}/registry`;
-    createTmuxSession(name, cwd, buildTabEnv(registryUrl), { initialCommand });
+    createTmuxSession(name, cwd, buildSessionEnv(registryUrl, parsedEnv.env), { initialCommand });
     const t1 = Date.now();
     // createTmuxSession already initialized mouse and bindings; avoid
     // repeating that work and reuse the known cwd.

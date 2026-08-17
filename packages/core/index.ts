@@ -29,6 +29,11 @@ export { createTerminalPlugin } from './plugins/terminal/plugin.js';
 // turn argv into validated plugins (the host owns module resolution + import()).
 export { parsePluginSpecs, validatePluginModule, PluginSpecError } from './lib/pluginLoader.js';
 
+// `--env-passthrough` parsing — the pure argv parse a host CLI uses to turn
+// variable NAMES into the list startServer installs (spec 001). Values are
+// never handled here; the wrapper reads them from the backend's environment.
+export { parseEnvPassthroughArgv, EnvNameError } from './lib/sessionEnv.js';
+
 // Browser registry primitives — for plugin authors that want their tab's
 // MCP/sandbox child processes to register browsers and have them rendered
 // in a TabBrowserView (terminal, agent, future plugins). The router and

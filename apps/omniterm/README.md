@@ -150,6 +150,46 @@ such as Tailscale.
 Make sure your firewall or network rules allow access only from devices you
 trust.
 
+## Pass environment variables to terminals
+
+Every terminal omniterm opens starts from a clean environment: omniterm keeps a
+short list of variables (`TERM`, `HOME`, `PATH`, and friends), drops everything
+else, and then runs your login shell so your own profile builds the rest. That
+stops the environment of whatever shell you launched omniterm from leaking into
+every terminal.
+
+If omniterm runs inside an environment you configured on purpose — a container,
+a remote box, a CI shell — name the variables you want terminals to keep:
+
+```bash
+MY_TOOL_TOKEN=… omniterm --env-passthrough MY_TOOL_TOKEN,MY_TOOL_URL
+```
+
+You pass names, never values. omniterm reads the values from its own
+environment, so they never appear in a config file, a log line, or an API
+response. `OMNITERM_ENV_PASSTHROUGH=MY_TOOL_TOKEN,MY_TOOL_URL` does the same
+thing, and takes precedence when both are given. `GET /api/session-env` reports
+the names in effect, so you can check the setting without printing a secret.
+
+One limit worth knowing: omniterm can only pass on the value that existed when
+its terminal backend started, and that backend keeps running even if omniterm
+itself restarts. If your value changes while omniterm is running — a token that
+rotates, for example — set it from your login profile instead, which every
+terminal re-reads as it opens.
+
+A program driving the HTTP API can also set variables on a single terminal:
+
+```json
+POST /api/create-session
+{ "cwd": "/work", "name": "task-42", "env": { "TASK_ID": "42" } }
+```
+
+Those apply to that terminal, to the command it starts with, to the shell it
+returns to when that command exits, and to any pane you split from it — and to
+nothing else. These values are passed to the terminal backend as command
+arguments, so other users on the same machine can see them with `ps`. Use them
+for configuration, not for secrets.
+
 ## Add plugins
 
 Plugins add features without changing the main app. Load a published npm package
