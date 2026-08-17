@@ -17,7 +17,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 //
 // Each test creates its own session — no ordering dependencies between tests.
 // Self-skips when tmux is not installed (CI's publish workflows don't install
-// it); see specs/007-clean-session-env/test-spec.md CSE-T03.
+// it); a skip is reported as a skip, never as a pass. The behavior under test
+// is specs/001-omniterm-core/spec.md FR-010 – FR-013 (the pane environment).
 
 function resolveTmux(): string | null {
   try {
@@ -59,10 +60,16 @@ process.env.SETTINGS_DIR = path.join(SOCK_DIR, 'settings');
 process.env.HOME = WORK;
 process.env.SSH_AUTH_SOCK = '/tmp/omnitest-fake-agent.sock';
 process.env.FAKE_LEAK = 'oops';
+// Stands in for a value the operator wants panes to keep (spec 001). It MUST be
+// set before the first tmux call: the wrapper reads passthrough values with
+// printenv inside the tmux server, which inherits this process's environment
+// when it is first started. MY_UNSET_TOKEN is deliberately never set.
+process.env.MY_PASSTHROUGH_TOKEN = 'ptok';
 process.env.PORT = '4321';
 process.env.OMNITERM_PORT = '17717';
 
 const { createTmuxSession, getTmuxPaneTitle } = await import('./tmux.js');
+const { setEnvPassthrough } = await import('../../../lib/sessionEnv.js');
 
 // Mirrors the shape buildTabEnv stamps via `-e` (kept inline: importing
 // sessions.js would trigger its module-load recovery pass).
@@ -198,4 +205,82 @@ test('createTmuxSession: new windows are cleaned by its default-command', { skip
   tmux(['new-window', '-t', '=it-win:']);
   const lines = await dumpPaneEnv('it-win', path.join(WORK, 'win.env'), 'default-command window');
   assertCleanPaneEnv(lines, 'default-command window');
+});
+
+// --- spec 001: session environment ----------------------------------------
+
+test('createTmuxSession: a per-session env reaches the pane and outlives the command', { skip }, async () => {
+  // The initial command writes a marker and EXITS, so the env dump below comes
+  // from the shell the wrapper drops to afterwards. That is the case the old
+  // `FOO=bar cmd` prefix could not cover, and the reason this feature exists.
+  const out = path.join(WORK, 'sessenv.out');
+  createTmuxSession(
+    'it-env',
+    WORK,
+    { ...TAB_ENV, MY_CONTEXT: 'abc', MY_HOME_DIR: '/tmp/ctx' },
+    { initialCommand: `{ echo "cmd:$MY_CONTEXT"; echo __DUMP_DONE__; } > ${out}` },
+  );
+
+  const cmdOut = await pollFor('initial command output', envFileLines(out));
+  assert.equal(cmdOut[0], 'cmd:abc', 'the initial command did not see the session env');
+
+  const lines = await dumpPaneEnv('it-env', path.join(WORK, 'sessenv.env'), 'session env');
+  assert.ok(lines.includes('MY_CONTEXT=abc'), 'MY_CONTEXT did not survive the command exiting');
+  assert.ok(lines.includes('MY_HOME_DIR=/tmp/ctx'));
+  assertCleanPaneEnv(lines, 'session env');
+
+  // Splits and prefix-c windows go through default-command, not the
+  // new-session argv — they must not be a downgrade.
+  tmux(['new-window', '-t', '=it-env:']);
+  const winLines = await dumpPaneEnv('it-env', path.join(WORK, 'sessenv-win.env'), 'session env window');
+  assert.ok(winLines.includes('MY_CONTEXT=abc'), 'a new window lost the session env');
+});
+
+test('createTmuxSession: a session env does not leak into another session', { skip }, async () => {
+  createTmuxSession('it-env-other', WORK, TAB_ENV);
+  const lines = await dumpPaneEnv('it-env-other', path.join(WORK, 'other.env'), 'sibling session');
+  assert.ok(!lines.some((l) => l.startsWith('MY_CONTEXT=')), 'session env crossed sessions');
+});
+
+test('createTmuxSession: host passthrough names cross the scrub, unset ones stay unset', { skip }, async () => {
+  try {
+    setEnvPassthrough(['MY_PASSTHROUGH_TOKEN', 'MY_UNSET_TOKEN']);
+    createTmuxSession('it-passthrough', WORK, TAB_ENV);
+    const lines = await dumpPaneEnv('it-passthrough', path.join(WORK, 'pass.env'), 'passthrough');
+    assert.ok(lines.includes('MY_PASSTHROUGH_TOKEN=ptok'), 'passthrough value did not reach the pane');
+    // printenv skips unset vars, so a listed-but-unset name must not appear at
+    // all — an empty string would look like a configured-but-blank credential.
+    assert.ok(!lines.some((l) => l.startsWith('MY_UNSET_TOKEN')), 'unset name became an empty value');
+    assertCleanPaneEnv(lines, 'passthrough');
+  } finally {
+    setEnvPassthrough([]);
+  }
+});
+
+test('createTmuxSession: with nothing configured a pane is unchanged', { skip }, async () => {
+  // The scrub stays the default: a name that was not asked for does not cross,
+  // even though a sibling session earlier in this file allowed it.
+  createTmuxSession('it-default', WORK, TAB_ENV);
+  const lines = await dumpPaneEnv('it-default', path.join(WORK, 'default.env'), 'unconfigured');
+  assert.ok(!lines.some((l) => l.startsWith('MY_PASSTHROUGH_TOKEN=')), 'passthrough outlived its config');
+  assertCleanPaneEnv(lines, 'unconfigured');
+});
+
+test('createTmuxSession: a per-session value shadows the host passthrough for the same name', { skip }, async () => {
+  // Both inputs can name the same variable. The pane must see the per-session
+  // value (spec 001 FR-013): `tmux -e` sets it on the session, which shadows the
+  // tmux server env the passthrough reads with printenv. Asserting the allowlist
+  // ORDER alone would not catch a regression here — the value is what matters.
+  try {
+    setEnvPassthrough(['MY_PASSTHROUGH_TOKEN']);
+    createTmuxSession('it-precedence', WORK, { ...TAB_ENV, MY_PASSTHROUGH_TOKEN: 'session-wins' });
+    const lines = await dumpPaneEnv('it-precedence', path.join(WORK, 'prec.env'), 'precedence');
+    assert.ok(
+      lines.includes('MY_PASSTHROUGH_TOKEN=session-wins'),
+      `expected the session value to win, got: ${lines.filter((l) => l.startsWith('MY_PASSTHROUGH_TOKEN')).join(',')}`,
+    );
+    assert.ok(!lines.includes('MY_PASSTHROUGH_TOKEN=ptok'));
+  } finally {
+    setEnvPassthrough([]);
+  }
 });

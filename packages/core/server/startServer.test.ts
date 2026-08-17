@@ -9,6 +9,7 @@ import type { IncomingMessage } from 'node:http';
 import type express from 'express';
 import { handleTtydHttpProxy, handleTtydUpgrade, startServer } from './startServer.js';
 import type { Session } from '../plugins/terminal/lib/sessions.js';
+import { getEnvPassthrough, setEnvPassthrough } from '../lib/sessionEnv.js';
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -316,4 +317,79 @@ test('ttyd WebSocket upgrades destroy the socket when readiness fails', async ()
   assert.equal(socket.destroyCalls, 1);
   assert.equal(proxyCalls, 0);
   assert.deepEqual(errors, ['ttyd not ready']);
+});
+
+// --- session-env passthrough wiring (spec 001 FR-011) ---------------------
+
+/** Boot a bare host on a free port and hand the handle to `fn`, always shutting down. */
+async function withHost(
+  opts: Parameters<typeof startServer>[0],
+  fn: (base: string) => Promise<void>,
+): Promise<void> {
+  const port = await getFreePort();
+  const handle = await startServer({ excludeDefaults: false, host: '127.0.0.1', port, ...opts });
+  try {
+    await fn(`http://127.0.0.1:${port}`);
+  } finally {
+    await handle.shutdown();
+  }
+}
+
+test('startServer installs the passthrough list from its options', async () => {
+  setEnvPassthrough([]);
+  delete process.env.OMNITERM_ENV_PASSTHROUGH;
+  await withHost({ envPassthrough: ['MY_TOOL_TOKEN', 'MY_TOOL_URL'] }, async (base) => {
+    assert.deepEqual(getEnvPassthrough(), ['MY_TOOL_TOKEN', 'MY_TOOL_URL']);
+    const body = (await (await fetch(`${base}/api/session-env`)).json()) as {
+      passthrough: string[];
+    };
+    assert.deepEqual(body.passthrough, ['MY_TOOL_TOKEN', 'MY_TOOL_URL']);
+  });
+  setEnvPassthrough([]);
+});
+
+test('OMNITERM_ENV_PASSTHROUGH overrides the option, like OMNITERM_PORT/HOST do', async () => {
+  setEnvPassthrough([]);
+  process.env.OMNITERM_ENV_PASSTHROUGH = ' FROM_ENV , OTHER ,FROM_ENV';
+  try {
+    await withHost({ envPassthrough: ['FROM_OPTION'] }, async () => {
+      // Trimmed, de-duplicated, and the option is not merged in.
+      assert.deepEqual(getEnvPassthrough(), ['FROM_ENV', 'OTHER']);
+    });
+  } finally {
+    delete process.env.OMNITERM_ENV_PASSTHROUGH;
+    setEnvPassthrough([]);
+  }
+});
+
+// The variable is server-only config: it must not itself survive into panes.
+// It is not in the pane allowlist either, so this is defence in depth — and it
+// mirrors how OMNITERM_PORT/OMNITERM_HOST are handled.
+test('startServer strips OMNITERM_ENV_PASSTHROUGH from process.env', async () => {
+  setEnvPassthrough([]);
+  process.env.OMNITERM_ENV_PASSTHROUGH = 'FROM_ENV';
+  try {
+    await withHost({}, async () => {
+      assert.equal(process.env.OMNITERM_ENV_PASSTHROUGH, undefined);
+      assert.deepEqual(getEnvPassthrough(), ['FROM_ENV']);
+    });
+  } finally {
+    delete process.env.OMNITERM_ENV_PASSTHROUGH;
+    setEnvPassthrough([]);
+  }
+});
+
+test('a malformed OMNITERM_ENV_PASSTHROUGH fails the boot rather than dropping names', async () => {
+  setEnvPassthrough([]);
+  process.env.OMNITERM_ENV_PASSTHROUGH = 'GOOD,bad name';
+  try {
+    await assert.rejects(
+      () => withHost({}, async () => {}),
+      (e: Error) => e.name === 'EnvNameError' && /bad name/.test(e.message),
+    );
+    assert.deepEqual(getEnvPassthrough(), [], 'nothing should be installed on a bad list');
+  } finally {
+    delete process.env.OMNITERM_ENV_PASSTHROUGH;
+    setEnvPassthrough([]);
+  }
 });

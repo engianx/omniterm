@@ -49,6 +49,7 @@ import { confinePath } from '../lib/paths.js';
 import { allowedRoots } from '../lib/allowedRoots.js';
 import { listRepos } from '../lib/repos.js';
 import { listWorktrees } from '../lib/worktrees.js';
+import { parseEnvPassthrough, setEnvPassthrough } from '../lib/sessionEnv.js';
 import { sessionsRouter } from '../plugins/terminal/routes/sessions.js';
 import { createTerminalPlugin } from '../plugins/terminal/plugin.js';
 import type { TabTypePlugin, HostContext } from '../plugins/types.js';
@@ -59,6 +60,14 @@ export interface StartServerOptions {
   port?: number;
   /** Bind address. Default: 0.0.0.0. Env: OMNITERM_HOST (overrides). */
   host?: string;
+  /**
+   * Names of environment variables that may cross the pane env scrub, on top
+   * of omniterm's own allowlist (spec 001). Values are never passed here — the
+   * wrapper reads them from the environment the terminal backend was started
+   * with. Default: none. Env: OMNITERM_ENV_PASSTHROUGH (comma-separated,
+   * overrides).
+   */
+  envPassthrough?: string[];
   /**
    * Extra tab-type plugins beyond the bundled default (terminal). Order
    * matters for WS upgrade dispatch — the first plugin to claim a URL
@@ -196,6 +205,15 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
   // OMNITERM_HOST=127.0.0.1 to restrict to the local machine.
   const HOST = process.env.OMNITERM_HOST ?? opts.host ?? '0.0.0.0';
 
+  // Names the operator wants to survive the pane env scrub (spec 001). Read
+  // BEFORE the strip below, since the variable itself is server-only config.
+  // The values these names refer to stay in process.env and are inherited by
+  // the tmux server, where the clean-env wrapper reads them at pane start.
+  const rawPassthrough = process.env.OMNITERM_ENV_PASSTHROUGH;
+  setEnvPassthrough(
+    rawPassthrough !== undefined ? parseEnvPassthrough(rawPassthrough) : (opts.envPassthrough ?? []),
+  );
+
   // Strip server-only env vars from process.env so they don't leak into
   // child processes (tmux, ttyd, spawned shells). Vars that MUST propagate
   // (OMNITERM_BROWSER_REGISTRY_URL etc.) are passed explicitly via tmux -e.
@@ -204,6 +222,7 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
     'OMNITERM_HOST',
     'OMNITERM_TTYD_PORT_MIN',
     'OMNITERM_TTYD_PORT_MAX',
+    'OMNITERM_ENV_PASSTHROUGH',
   ])
     delete process.env[name];
 

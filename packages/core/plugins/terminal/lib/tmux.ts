@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process';
 import { unlinkSync } from 'fs';
 import { homedir } from 'os';
 import { loadSettings } from '../../../lib/settings.js';
+import { getEnvPassthrough } from '../../../lib/sessionEnv.js';
 
 // Configure tmux mouse drag-selection → browser clipboard via OSC 52.
 //
@@ -153,21 +154,49 @@ export const CLEAN_ENV_VARS = [
  *
  * MUST NOT contain single quotes: buildDefaultCommand embeds it in a
  * single-quoted `sh -c` string for the tmux default-command option.
+ *
+ * `extraNames` widens the allowlist for one session (spec 001 FR-011/FR-012):
+ * the host-level passthrough list plus whatever names that session sets. They are
+ * validated as POSIX env names before they reach here — an unvalidated name
+ * would be code injection into this script, and through default-command into
+ * every pane the session ever opens.
  */
-export const CLEAN_ENV_SCRIPT = [
-  'shell="$1"; cmd="$2"',
-  'set --',
-  `for v in ${CLEAN_ENV_VARS.join(' ')}; do`,
-  '  if val=$(printenv "$v"); then set -- "$@" "$v=$val"; fi',
-  'done',
-  'if [ -n "$cmd" ]; then',
-  '  exec env -i "$@" "$shell" -lc "$cmd',
-  '',
-  'exec \\"\\$0\\"" "$shell"',
-  'else',
-  '  exec env -i "$@" "$shell" -l',
-  'fi',
-].join('\n');
+export function buildCleanEnvScript(extraNames: readonly string[] = []): string {
+  const names = [...CLEAN_ENV_VARS];
+  for (const name of extraNames) if (!names.includes(name)) names.push(name);
+  return [
+    'shell="$1"; cmd="$2"',
+    'set --',
+    `for v in ${names.join(' ')}; do`,
+    '  if val=$(printenv "$v"); then set -- "$@" "$v=$val"; fi',
+    'done',
+    'if [ -n "$cmd" ]; then',
+    '  exec env -i "$@" "$shell" -lc "$cmd',
+    '',
+    'exec \\"\\$0\\"" "$shell"',
+    'else',
+    '  exec env -i "$@" "$shell" -l',
+    'fi',
+  ].join('\n');
+}
+
+/** The wrapper with no session-specific additions — the unconfigured shape. */
+export const CLEAN_ENV_SCRIPT = buildCleanEnvScript();
+
+/**
+ * The extra allowlist names a session needs: the host-level passthrough plus
+ * the names that session stamps via `tmux -e`. The allowlist entry is not
+ * optional — without it a stamped value is set on the tmux session and then
+ * dropped again by `env -i` at the pane, so the variable never arrives. Base
+ * names are filtered out so the `for` list stays clean.
+ */
+function sessionEnvNames(env?: Record<string, string>): string[] {
+  const extras: string[] = [];
+  for (const name of [...getEnvPassthrough(), ...Object.keys(env ?? {})]) {
+    if (!CLEAN_ENV_VARS.includes(name) && !extras.includes(name)) extras.push(name);
+  }
+  return extras;
+}
 
 /**
  * The tmux `default-command` for omniterm sessions: new windows and split
@@ -178,9 +207,9 @@ export const CLEAN_ENV_SCRIPT = [
  * option value via `sh -c`, hence the single string with the shell path
  * single-quoted (POSIX '\'' escape) to survive spaces/metacharacters.
  */
-export function buildDefaultCommand(shell: string): string {
+export function buildDefaultCommand(shell: string, extraNames: readonly string[] = []): string {
   const quotedShell = `'${shell.replace(/'/g, `'\\''`)}'`;
-  return `exec /bin/sh -c '${CLEAN_ENV_SCRIPT}' omniterm-clean-env ${quotedShell}`;
+  return `exec /bin/sh -c '${buildCleanEnvScript(extraNames)}' omniterm-clean-env ${quotedShell}`;
 }
 
 /**
@@ -213,7 +242,7 @@ export function buildNewSessionArgs(
   // Multiple argv words make tmux execvp the command directly (no extra
   // `sh -c` string-splitting pass), so SCRIPT, shell, and initialCommand
   // each arrive as one intact argument.
-  args.push('sh', '-c', CLEAN_ENV_SCRIPT, 'omniterm-clean-env', shell);
+  args.push('sh', '-c', buildCleanEnvScript(sessionEnvNames(env)), 'omniterm-clean-env', shell);
   if (options?.initialCommand) {
     args.push(options.initialCommand);
   }
@@ -240,7 +269,8 @@ export function createTmuxSession(
     ['mouse', 'on'],
     // New windows / split panes go through the clean-env wrapper too —
     // without this they'd get the raw tmux-server env (see buildDefaultCommand).
-    ['default-command', buildDefaultCommand(shell)],
+    // Same extra names as the first pane, so a split is not a downgrade.
+    ['default-command', buildDefaultCommand(shell, sessionEnvNames(env))],
     ['history-limit', '50000'],
     ['status-position', 'bottom'],
     ['base-index', '1'],
