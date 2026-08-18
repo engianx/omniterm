@@ -85,7 +85,6 @@ export interface HomeState {
   workspacesPanelMode: WorkspacesPanelMode;
   workspacesPanelDockedOpen: boolean;
   filesPanelMode: FilesPanelMode;
-  filesPanelDockedOpen: boolean;
   browserPanelMode: BrowserPanelMode;
   browserInspectorPosition: BrowserInspectorPosition;
   workspaceFilterActiveOnly: boolean;
@@ -102,7 +101,6 @@ export interface HomeState {
   setWorkspacesPanelMode: React.Dispatch<React.SetStateAction<WorkspacesPanelMode>>;
   setWorkspacesPanelDockedOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setFilesPanelMode: React.Dispatch<React.SetStateAction<FilesPanelMode>>;
-  setFilesPanelDockedOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setBrowserPanelMode: React.Dispatch<React.SetStateAction<BrowserPanelMode>>;
   setBrowserInspectorPosition: React.Dispatch<React.SetStateAction<BrowserInspectorPosition>>;
   setWorkspaceFilterActiveOnly: React.Dispatch<React.SetStateAction<boolean>>;
@@ -208,12 +206,6 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     },
     [activePath, isMobile],
   );
-  // File-pane visibility is one conceptual setting across docked, overlay, and
-  // mobile presentations. Keep the existing HomeState aliases so integrations
-  // and callers do not need to understand the presentation mode.
-  const filesPanelDockedOpen = filesPanelOpen;
-  const setFilesPanelDockedOpen = setFilesPanelOpen;
-
   const fetchRepos = useCallback(async () => {
     const res = await fetch('/api/repos');
     if (res.ok) {
@@ -532,7 +524,6 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     workspacesPanelMode,
     workspacesPanelDockedOpen,
     filesPanelMode,
-    filesPanelDockedOpen,
     browserPanelMode,
     browserInspectorPosition,
     workspaceFilterActiveOnly,
@@ -549,7 +540,6 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     setWorkspacesPanelMode,
     setWorkspacesPanelDockedOpen,
     setFilesPanelMode,
-    setFilesPanelDockedOpen,
     setBrowserPanelMode,
     setBrowserInspectorPosition,
     setWorkspaceFilterActiveOnly,
@@ -746,9 +736,7 @@ export default function Home(props: HomeProps) {
   const isDocked = effectiveWorkspacesMode === 'docked';
   const effectiveFilesMode: FilesPanelMode = host.isMobile ? 'overlay' : host.filesPanelMode;
   const isFilesDocked = effectiveFilesMode === 'docked';
-  // In docked mode the panel is permanently mounted alongside main, so
-  // visibility is gated by filesPanelDockedOpen instead of filesPanelOpen.
-  const filesPanelVisible = isFilesDocked ? host.filesPanelDockedOpen : host.filesPanelOpen;
+  const filesPanelVisible = host.filesPanelOpen;
 
   const wrappedFileHandlers = useMemo(() => {
     if (!fileHandlers || fileHandlers.length === 0) return undefined;
@@ -880,14 +868,10 @@ export default function Home(props: HomeProps) {
   }, [host, isDocked]);
 
   const handleToggleFiles = useCallback(() => {
-    if (isFilesDocked) {
-      host.setFilesPanelDockedOpen((prev) => !prev);
-    } else {
-      host.setFilesPanelOpen((prev) => !prev);
-      if (!host.filesPanelMounted) host.setFilesPanelMounted(true);
-    }
+    host.setFilesPanelOpen((prev) => !prev);
+    if (!host.filesPanelMounted) host.setFilesPanelMounted(true);
     track('panel_toggled', { panel: 'files' });
-  }, [host, isFilesDocked]);
+  }, [host]);
 
   const handleToggleBrowsers = useCallback(() => {
     host.setBrowserPanelOpen((prev) => !prev);
@@ -914,14 +898,6 @@ export default function Home(props: HomeProps) {
 
   const handleFilesPanelModeChange = useCallback(
     (newMode: FilesPanelMode) => {
-      if (newMode === 'overlay' && host.filesPanelDockedOpen) {
-        host.setFilesPanelOpen(true);
-        // Overlay path is gated on filesPanelMounted (lazy-mount); ensure it's
-        // mounted so the panel actually appears after the mode switch.
-        host.setFilesPanelMounted(true);
-      } else if (newMode === 'docked' && host.filesPanelOpen) {
-        host.setFilesPanelDockedOpen(true);
-      }
       host.setFilesPanelMode(newMode);
     },
     [host],
@@ -990,9 +966,19 @@ export default function Home(props: HomeProps) {
         <SettingsIcon />
       </button>
       <button
-        style={S.tabBarBtn}
-        onClick={handleToggleBrowsers}
-        title={host.browserPanelOpen ? 'Hide browser view' : 'Show browser view'}
+        style={{
+          ...S.tabBarBtn,
+          opacity: host.activePath ? 1 : 0.3,
+          cursor: host.activePath ? 'pointer' : 'default',
+        }}
+        onClick={host.activePath ? handleToggleBrowsers : undefined}
+        title={
+          host.activePath
+            ? host.browserPanelOpen
+              ? 'Hide browser view'
+              : 'Show browser view'
+            : 'Select a workspace first'
+        }
       >
         <BrowserIcon />
       </button>
@@ -1137,12 +1123,12 @@ export default function Home(props: HomeProps) {
 
       {!host.isMobile &&
         isFilesDocked &&
-        host.filesPanelDockedOpen &&
+        host.filesPanelOpen &&
         (host.activePath ? (
           <FilePanel
             dirPath={host.activePath}
             width={host.filesPanelWidth}
-            onClose={() => host.setFilesPanelDockedOpen(false)}
+            onClose={() => host.setFilesPanelOpen(false)}
             onWidthChange={host.setFilesPanelWidth}
             onResizeStart={() => host.setIsResizing(true)}
             onResizeEnd={() => host.setIsResizing(false)}
