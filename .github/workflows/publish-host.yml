@@ -30,8 +30,19 @@ name: Publish @omniterm/host
 # quality index per npm release. Tag creation is unaffected by the ruleset,
 # which targets branches only.
 #
+# AUTHENTICATION IS TRUSTED PUBLISHING (OIDC), NOT A TOKEN. The npm package is
+# configured with this repository and this workflow file as its trusted
+# publisher, so `pnpm publish` exchanges the runner's GitHub OIDC id-token for a
+# short-lived npm credential. That requires `id-token: write` on this job — pnpm
+# still ATTEMPTS the exchange without it and only logs
+# `Skipped OIDC: ERR_PNPM_ID_TOKEN_GITHUB_WORKFLOW_INCORRECT_PERMISSIONS`, then
+# falls through to whatever static token is configured. When the NPM_TOKEN
+# secret was removed, that fallthrough is what turned into `404 Not Found - PUT`
+# on 0.2.28: npm answers an unauthenticated publish with a 404, not a 401.
+# Renaming or moving this file breaks publishing until npm's trusted-publisher
+# setting is updated to match.
+#
 # Required secrets:
-#   NPM_TOKEN    npm automation token with publish rights.
 #   POSTHOG_KEY  PostHog project key, baked into the bundle at build time (see
 #                the Build step). It is deliberately NOT in source: a source
 #                checkout or a fork's build has no key, so telemetry is off
@@ -57,6 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write # required: npm trusted publishing (OIDC) — see the header
     outputs:
       old_version: ${{ steps.versions.outputs.old }}
       new_version: ${{ steps.versions.outputs.new }}
@@ -341,12 +353,30 @@ jobs:
         working-directory: apps/omniterm
         run: pnpm publish --dry-run --no-git-checks --access public
 
+      # PRE-PUBLISH, so it is still free to fail. GitHub injects
+      # ACTIONS_ID_TOKEN_REQUEST_URL only when the job has `id-token: write`;
+      # without it pnpm logs `Skipped OIDC: ...INCORRECT_PERMISSIONS` and
+      # publishes unauthenticated, which npm answers with a confusing
+      # `404 Not Found - PUT`. Checking here turns a dropped permission into a
+      # clear failure BEFORE anything reaches npm. Deliberately not a check on
+      # the publish OUTPUT: by then the version is live and failing the step
+      # would strand it with no tag and no release.
+      - name: Assert OIDC is available (trusted publishing)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            printf '::%s::%s\n' error "No OIDC id-token available — this job needs 'permissions: id-token: write' to publish via npm trusted publishing. Nothing has been published."
+            exit 1
+          fi
+          echo "OIDC id-token endpoint present; pnpm can exchange it for an npm credential."
+
+      # No NODE_AUTH_TOKEN: the credential comes from the OIDC exchange that
+      # pnpm performs itself, using the id-token asserted above.
       - name: npm publish
         if: ${{ !inputs.dry_run }}
         working-directory: apps/omniterm
         run: pnpm publish --no-git-checks --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # The tag lands on the checked-out main commit, which the guard earlier
       # proved already carries this version — so it points at exactly the source
