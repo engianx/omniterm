@@ -12,6 +12,11 @@ import { shouldResetWorkspaceTabs } from './workspaceSelection';
 import { worktreeDeleteUrl, worktreeStatusUrl, probeIsDirty } from './worktreeDelete';
 import { initClientTelemetry, track } from './telemetryClient';
 import { MOBILE_MAX_WIDTH } from './breakpoints';
+import {
+  resolveWorkspacePanelState,
+  updateWorkspacePanelState,
+  type WorkspacePanelStates,
+} from './workspacePanelState';
 import type {
   WorkspacesPanelMode,
   FilesPanelMode,
@@ -154,18 +159,16 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
   const [workspacesPanelMode, setWorkspacesPanelMode] = useState<WorkspacesPanelMode>('docked');
   const [workspacesPanelDockedOpen, setWorkspacesPanelDockedOpen] = useState(true);
   const [filesPanelMode, setFilesPanelMode] = useState<FilesPanelMode>('docked');
-  const [filesPanelDockedOpen, setFilesPanelDockedOpen] = useState(false);
   const [browserPanelMode, setBrowserPanelMode] = useState<BrowserPanelMode>('docked');
   const [browserInspectorPosition, setBrowserInspectorPosition] =
     useState<BrowserInspectorPosition>('hidden');
   const [workspaceFilterActiveOnly, setWorkspaceFilterActiveOnly] = useState(false);
-  const [filesPanelOpen, setFilesPanelOpen] = useState(false);
+  const [workspacePanelStates, setWorkspacePanelStates] = useState<WorkspacePanelStates>({});
   const [filesPanelMounted, setFilesPanelMounted] = useState(false);
   const [filesPanelWidth, setFilesPanelWidth] = useState(900);
   const [workspacesWidth, setWorkspacesWidth] = useState(280);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPanelWidth, setSettingsPanelWidth] = useState(420);
-  const [browserPanelOpen, setBrowserPanelOpen] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [pendingDeleteRepo, setPendingDeleteRepo] = useState<{
     id: string;
@@ -184,6 +187,32 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  const { browserOpen: browserPanelOpen, filesOpen: filesPanelOpen } = useMemo(
+    () => resolveWorkspacePanelState(workspacePanelStates, activePath, isMobile),
+    [workspacePanelStates, activePath, isMobile],
+  );
+  const setBrowserPanelOpen = useCallback<React.Dispatch<React.SetStateAction<boolean>>>(
+    (update) => {
+      setWorkspacePanelStates((states) =>
+        updateWorkspacePanelState(states, activePath, 'browserOpen', update, isMobile),
+      );
+    },
+    [activePath, isMobile],
+  );
+  const setFilesPanelOpen = useCallback<React.Dispatch<React.SetStateAction<boolean>>>(
+    (update) => {
+      setWorkspacePanelStates((states) =>
+        updateWorkspacePanelState(states, activePath, 'filesOpen', update, isMobile),
+      );
+    },
+    [activePath, isMobile],
+  );
+  // File-pane visibility is one conceptual setting across docked, overlay, and
+  // mobile presentations. Keep the existing HomeState aliases so integrations
+  // and callers do not need to understand the presentation mode.
+  const filesPanelDockedOpen = filesPanelOpen;
+  const setFilesPanelDockedOpen = setFilesPanelOpen;
 
   const fetchRepos = useCallback(async () => {
     const res = await fetch('/api/repos');
@@ -229,10 +258,8 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
       .then((data) => {
         if (data.activePath) setActivePath(data.activePath);
         if (data.activeTabId) setActiveTabId(data.activeTabId);
-        if (typeof data.browserPanelOpen === 'boolean') {
-          setBrowserPanelOpen(data.browserPanelOpen);
-        } else if (typeof window !== 'undefined' && window.innerWidth >= 768) {
-          setBrowserPanelOpen(true);
+        if (data.workspacePanelState && typeof data.workspacePanelState === 'object') {
+          setWorkspacePanelStates(data.workspacePanelState);
         }
         if (data.workspacesPanelMode === 'overlay' || data.workspacesPanelMode === 'docked') {
           setWorkspacesPanelMode(data.workspacesPanelMode);
@@ -245,9 +272,6 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
         }
         if (data.filesPanelMode === 'overlay' || data.filesPanelMode === 'docked') {
           setFilesPanelMode(data.filesPanelMode);
-        }
-        if (typeof data.filesPanelDockedOpen === 'boolean') {
-          setFilesPanelDockedOpen(data.filesPanelDockedOpen);
         }
         if (data.browserPanelMode === 'overlay' || data.browserPanelMode === 'docked') {
           setBrowserPanelMode(data.browserPanelMode);
@@ -279,12 +303,11 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
       body: JSON.stringify({
         activePath,
         activeTabId,
-        browserPanelOpen,
+        workspacePanelState: workspacePanelStates,
         workspacesPanelMode,
         workspacesPanelDockedOpen,
         workspaceFilterActiveOnly,
         filesPanelMode,
-        filesPanelDockedOpen,
         browserPanelMode,
         browserInspectorPosition,
       }),
@@ -293,12 +316,11 @@ export function useHomeState(options?: UseHomeStateOptions): HomeState {
     settingsHydrated,
     activePath,
     activeTabId,
-    browserPanelOpen,
+    workspacePanelStates,
     workspacesPanelMode,
     workspacesPanelDockedOpen,
     workspaceFilterActiveOnly,
     filesPanelMode,
-    filesPanelDockedOpen,
     browserPanelMode,
     browserInspectorPosition,
   ]);
@@ -1079,7 +1101,9 @@ export default function Home(props: HomeProps) {
         </div>
       )}
 
-      {!host.isMobile && !isFilesDocked && host.filesPanelMounted && (
+      {!host.isMobile &&
+        !isFilesDocked &&
+        (host.filesPanelMounted || host.filesPanelOpen) && (
         <div style={{ ...S.overlayRight, display: host.filesPanelOpen ? undefined : 'none' }}>
           {host.activePath ? (
             <FilePanel
