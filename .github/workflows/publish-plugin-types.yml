@@ -10,7 +10,17 @@ name: Publish @omniterm/plugin-types
 # a PR that edits packages/plugin-types/package.json. This workflow only
 # publishes what that file already says, and refuses if that version is taken.
 #
-# Required secret: NPM_TOKEN (npm automation token with publish rights).
+# AUTHENTICATION IS TRUSTED PUBLISHING (OIDC), NOT A TOKEN — same as
+# publish-host.yml. npm names this repository and this workflow file as the
+# package's trusted publisher, so `pnpm publish` exchanges the runner's GitHub
+# id-token for a short-lived credential. That needs `id-token: write` on this
+# job: without it pnpm only logs
+# `Skipped OIDC: ERR_PNPM_ID_TOKEN_GITHUB_WORKFLOW_INCORRECT_PERMISSIONS` and
+# publishes unauthenticated, which npm answers with `404 Not Found - PUT`.
+# Renaming or moving this file breaks publishing until npm's trusted-publisher
+# setting is updated to match.
+#
+# No secrets required.
 
 on:
   workflow_dispatch:
@@ -23,9 +33,12 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Needed to push the release tag and create the GitHub release below.
+    # contents: write pushes the release tag and creates the GitHub release
+    # below; id-token: write is what lets pnpm perform the npm trusted-publishing
+    # exchange (see the header).
     permissions:
       contents: write
+      id-token: write
     steps:
       # fetch-depth: 0 brings the tags along — the release step reads the
       # previous one to bound the generated notes.
@@ -200,12 +213,30 @@ jobs:
         working-directory: packages/plugin-types
         run: pnpm publish --dry-run --no-git-checks --access public
 
+      # PRE-PUBLISH, so it is still free to fail. GitHub injects
+      # ACTIONS_ID_TOKEN_REQUEST_URL only when the job has `id-token: write`.
+      # Checking it here turns a dropped permission into a clear failure BEFORE
+      # anything reaches npm, rather than an opaque registry 404. Deliberately
+      # not a check on the publish OUTPUT: by then the version is live, and
+      # this workflow cannot mint a different one — the version is hand-chosen
+      # in packages/plugin-types/package.json and a re-run would refuse it as
+      # already taken.
+      - name: Assert OIDC is available (trusted publishing)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            printf '::%s::%s\n' error "No OIDC id-token available — this job needs 'permissions: id-token: write' to publish via npm trusted publishing. Nothing has been published."
+            exit 1
+          fi
+          echo "OIDC id-token endpoint present; pnpm can exchange it for an npm credential."
+
+      # No NODE_AUTH_TOKEN: the credential comes from the OIDC exchange that
+      # pnpm performs itself, using the id-token asserted above.
       - name: npm publish
         if: ${{ !inputs.dry_run }}
         working-directory: packages/plugin-types
         run: pnpm publish --no-git-checks --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Changelog per npm release, same as publish-host.yml. The tag is prefixed
       # `plugin-types-v<version>` because two packages release from this one
