@@ -17,6 +17,12 @@ export type FilesPanelMode = PanelDisplayMode;
 export type BrowserPanelMode = PanelDisplayMode;
 export type BrowserInspectorPosition = 'hidden' | 'right' | 'bottom';
 
+export interface WorkspacePanelState {
+  /** null preserves the responsive first-use default: open on desktop, closed on mobile. */
+  browserOpen: boolean | null;
+  filesOpen: boolean;
+}
+
 /** xterm renderer used by ttyd: 'webgl' (GPU, fast) or 'dom' (compatible fallback). */
 export type TerminalRenderer = 'webgl' | 'dom';
 
@@ -62,12 +68,6 @@ export interface Settings {
    */
   filesPanelMode: FilesPanelMode;
   /**
-   * Visibility of the docked files panel. Only consulted when
-   * `filesPanelMode === "docked"` and the viewport is wide. The
-   * overlay path uses transient in-memory state, not this setting.
-   */
-  filesPanelDockedOpen: boolean;
-  /**
    * Display mode for the browser view on wide viewports. "docked" places it
    * beside the terminal; "overlay" floats it above the terminal without
    * consuming terminal width. Narrow viewports always use their existing
@@ -76,12 +76,8 @@ export interface Settings {
   browserPanelMode: BrowserPanelMode;
   /** Placement of Chrome DevTools' inspector relative to its screencast. */
   browserInspectorPosition: BrowserInspectorPosition;
-  /**
-   * Whether the browser-view side panel is open in the UI. null means
-   * "user has never interacted with it" — the frontend picks a default
-   * (open on desktop, closed on mobile) on first render.
-   */
-  browserPanelOpen: boolean | null;
+  /** Per-workspace browser/file pane visibility, keyed by workspace path. */
+  workspacePanelState: Record<string, WorkspacePanelState>;
   /**
    * Per-workspace open file tabs. Key is the workspace dir (matches
    * activePath); value is the list of relative paths currently open in
@@ -119,10 +115,9 @@ const DEFAULT_SETTINGS: Settings = {
   workspacesPanelDockedOpen: true,
   workspaceFilterActiveOnly: false,
   filesPanelMode: 'docked',
-  filesPanelDockedOpen: false,
   browserPanelMode: 'docked',
   browserInspectorPosition: 'hidden',
-  browserPanelOpen: null,
+  workspacePanelState: {},
   filePanelTabs: {},
   telemetryEnabled: true,
   terminalRenderer: 'webgl',
@@ -180,6 +175,25 @@ export function loadSettings(): Settings {
     // Drop the dead `browserPanel` key (removed Browser Panel discovery feature)
     // so a previously-configured discoveryUrl doesn't linger as orphaned data.
     delete parsed.browserPanel;
+    // Panel visibility used to be global, with separate persisted state for the
+    // docked file pane and no persistence at all for overlay/mobile. Preserve
+    // the old values for the active workspace, then remove the legacy keys.
+    if (
+      !parsed.workspacePanelState &&
+      typeof parsed.activePath === 'string' &&
+      ('browserPanelOpen' in parsed || 'filesPanelDockedOpen' in parsed)
+    ) {
+      parsed.workspacePanelState = {
+        [parsed.activePath]: {
+          browserOpen:
+            typeof parsed.browserPanelOpen === 'boolean' ? parsed.browserPanelOpen : null,
+          filesOpen:
+            typeof parsed.filesPanelDockedOpen === 'boolean' ? parsed.filesPanelDockedOpen : false,
+        },
+      };
+    }
+    delete parsed.browserPanelOpen;
+    delete parsed.filesPanelDockedOpen;
     const settings = { ...DEFAULT_SETTINGS, ...parsed };
     // Every consumer treats these as strings — path.resolve, existsSync, id
     // derivation — and PUT /api/settings writes the request body verbatim, so a
@@ -229,6 +243,12 @@ export function saveSettings(partial: Partial<Settings>): Settings {
   }
   if (partial.filePanelTabs) {
     updated.filePanelTabs = { ...current.filePanelTabs, ...partial.filePanelTabs };
+  }
+  if (partial.workspacePanelState) {
+    updated.workspacePanelState = {
+      ...current.workspacePanelState,
+      ...partial.workspacePanelState,
+    };
   }
   mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(updated, null, 2), 'utf-8');

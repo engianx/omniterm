@@ -35,6 +35,48 @@ test('saveSettings/loadSettings round-trip and deep-merge terminalTabs per path'
   assert.deepStrictEqual(s.terminalTabs['/a'], [{ id: 's1', name: 'A' }]);
 });
 
+test('saveSettings deep-merges panel visibility per workspace', async () => {
+  const { loadSettings, saveSettings } = await import('./settings.js');
+  try {
+    rmSync(SETTINGS_PATH);
+  } catch {
+    /* fresh */
+  }
+
+  saveSettings({
+    workspacePanelState: { '/a': { browserOpen: true, filesOpen: false } },
+  });
+  saveSettings({
+    workspacePanelState: { '/b': { browserOpen: false, filesOpen: true } },
+  });
+
+  const s = loadSettings();
+  assert.deepStrictEqual(s.workspacePanelState, {
+    '/a': { browserOpen: true, filesOpen: false },
+    '/b': { browserOpen: false, filesOpen: true },
+  });
+});
+
+test('loadSettings migrates global panel visibility to the active workspace', async () => {
+  const { loadSettings } = await import('./settings.js');
+
+  writeFileSync(
+    SETTINGS_PATH,
+    JSON.stringify({
+      activePath: '/workspace/current',
+      browserPanelOpen: false,
+      filesPanelDockedOpen: true,
+    }),
+  );
+
+  const s = loadSettings();
+  assert.deepStrictEqual(s.workspacePanelState, {
+    '/workspace/current': { browserOpen: false, filesOpen: true },
+  });
+  assert.ok(!('browserPanelOpen' in s), 'legacy browser visibility is removed after migration');
+  assert.ok(!('filesPanelDockedOpen' in s), 'legacy file visibility is removed after migration');
+});
+
 test('loadSettings migrates legacy tabLayouts → terminalTabs without clobbering', async () => {
   const { loadSettings } = await import('./settings.js');
 
