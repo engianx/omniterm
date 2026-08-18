@@ -28,6 +28,15 @@ log, browser console, and screenshots showing each asserted state.
 6. Reload the page and repeat steps 4–5. Confirm both workspaces restore their
    own browser/file visibility.
 
+## No active workspace
+
+1. Use the Workspaces panel's Home action so no workspace is active.
+2. Confirm both the browser- and file-pane buttons are dimmed, have no pointer
+   cursor, and show `Select a workspace first` as their title.
+3. Click both controls and confirm neither pane opens and no console error is
+   emitted.
+4. Select workspace A again and confirm its saved pane visibility is unchanged.
+
 ## Overlay persistence
 
 1. Set the file panel display mode to overlay.
