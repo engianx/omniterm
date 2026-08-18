@@ -12,8 +12,8 @@ connection.
 
 ## Why use omniterm?
 
-- **Use your preferred coding agent.** Run Codex, Claude Code, or any other
-  command-line tool.
+- **Use your preferred coding agent.** Run Codex, Claude Code, Antigravity
+  (`agy`), or any other command-line tool.
 - **Keep work running.** Terminal sessions survive closed tabs, lost
   connections, device changes, and omniterm restarts.
 - **Work from any device.** You only need a browser and secure network access to
