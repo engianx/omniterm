@@ -3,6 +3,32 @@
   "version": "0.2.27",
   "description": "omniterm — a generic, browser-based dev host: persistent terminals, a browser-view panel, workspace management, and a runtime plugin API. CLI: omniterm.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/engianx/omniterm.git",
+    "directory": "apps/omniterm"
+  },
+  "homepage": "https://github.com/engianx/omniterm#readme",
+  "bugs": {
+    "url": "https://github.com/engianx/omniterm/issues"
+  },
+  "keywords": [
+    "omniterm",
+    "terminal",
+    "web-terminal",
+    "dev-server",
+    "workspace",
+    "plugin",
+    "agent",
+    "coding-agent",
+    "ai-agent",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "agy",
+    "developer-tools",
+    "remote-development"
+  ],
   "type": "module",
   "bin": {
     "omniterm": "bin/omniterm.js",
