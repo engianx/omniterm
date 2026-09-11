@@ -3,6 +3,7 @@ import { readdir, stat, readFile } from 'fs/promises';
 import nodePath from 'path';
 import { listWorktrees, removeWorktree, renameBranch, isWorktreeDirty } from '../../lib/worktrees.js';
 import { listRepos } from '../../lib/repos.js';
+import { registryUrlForRequest } from '../../browserRegistry/tabRegistry.js';
 import {
   createSession,
   deleteSession,
@@ -125,9 +126,8 @@ worktreesRouter.post('/worktrees/:wtId/sessions', async (req, res) => {
   try {
     // Tab id = session id (single-pane). Builder is invoked after the id
     // is generated inside createSession so the URL gets the real tabId.
-    const host = req.headers.host ?? '127.0.0.1:17716';
     const session = createSession(wtId, worktreePath, {
-      registryUrlFor: (tabId) => `http://${host}/t/${tabId}/registry`,
+      registryUrlFor: (tabId) => registryUrlForRequest(req, tabId),
     });
     try {
       await ensureSessionTtydReady(session);

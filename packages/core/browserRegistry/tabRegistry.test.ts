@@ -17,7 +17,7 @@ import express from 'express';
 import * as http from 'http';
 import { AddressInfo } from 'net';
 
-import { cleanupTab, createTabRegistryRouter, listBrowsers } from './tabRegistry.js';
+import { cleanupTab, createTabRegistryRouter, listBrowsers, registryUrlForRequest } from './tabRegistry.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -222,5 +222,45 @@ describe('tabRegistry', () => {
     );
     assert.ok(added, 'expected an `added` event');
     assert.equal(added.data.label, 'sse-test');
+  });
+});
+
+// Regression: the registry URL used to be built from `req.headers.host`, which
+// is whatever hostname the BROWSER used to reach omniterm. Behind a proxy on a
+// hosted box that is a public, authenticated hostname, so the shim — running
+// inside the box with no session cookie — POSTed there and got 401, and no
+// browser ever reached the UI. It worked on macOS only because the developer
+// browses localhost, which made the header loopback by accident.
+describe('registryUrlForRequest', () => {
+  it('ignores the Host header and uses loopback', () => {
+    const req = {
+      headers: { host: 'box.example.com' },
+      socket: { localPort: 17716 },
+    } as unknown as Parameters<typeof registryUrlForRequest>[0];
+    const url = registryUrlForRequest(req, 'tab-1');
+    assert.equal(url, 'http://127.0.0.1:17716/t/tab-1/registry');
+    assert.ok(!url.includes('box.example.com'));
+  });
+
+  it('uses the port the connection actually landed on', () => {
+    const req = { socket: { localPort: 12345 } } as unknown as Parameters<
+      typeof registryUrlForRequest
+    >[0];
+    assert.equal(registryUrlForRequest(req, 't'), 'http://127.0.0.1:12345/t/t/registry');
+  });
+
+  it('falls back to OMNITERM_PORT, then the server default', () => {
+    const noSocket = {} as unknown as Parameters<typeof registryUrlForRequest>[0];
+    const prev = process.env.OMNITERM_PORT;
+    try {
+      process.env.OMNITERM_PORT = '18080';
+      assert.equal(registryUrlForRequest(noSocket, 't'), 'http://127.0.0.1:18080/t/t/registry');
+      delete process.env.OMNITERM_PORT;
+      // 17717 is startServer's default port — the old inline fallback said 17716.
+      assert.equal(registryUrlForRequest(noSocket, 't'), 'http://127.0.0.1:17717/t/t/registry');
+    } finally {
+      if (prev === undefined) delete process.env.OMNITERM_PORT;
+      else process.env.OMNITERM_PORT = prev;
+    }
   });
 });
