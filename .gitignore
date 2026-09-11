@@ -45,3 +45,6 @@ Thumbs.db
 .codex/
 .claude/
 skills-lock.json
+
+# Shiplight skill-refresh cache (local only, never committed)
+.shiplight-agent-skills-last-update
