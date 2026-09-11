@@ -2,6 +2,7 @@ import { Router, type Response } from 'express';
 import { execFile } from 'child_process';
 import { homedir } from 'os';
 import { promisify } from 'util';
+import { registryUrlForRequest } from '../../../browserRegistry/tabRegistry.js';
 import {
   getSession,
   deleteSession,
@@ -247,8 +248,7 @@ sessionsRouter.post('/create-session', async (req, res) => {
 
   try {
     const t0 = Date.now();
-    const host = req.headers.host ?? '127.0.0.1:17716';
-    const registryUrl = `http://${host}/t/${name}/registry`;
+    const registryUrl = registryUrlForRequest(req, name);
     createTmuxSession(name, cwd, buildSessionEnv(registryUrl, parsedEnv.env), { initialCommand });
     const t1 = Date.now();
     // createTmuxSession already initialized mouse and bindings; avoid

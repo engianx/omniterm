@@ -18,6 +18,31 @@ import httpProxy from 'http-proxy';
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 
+/**
+ * The registry URL handed to a tab's child processes, as loopback.
+ *
+ * This MUST NOT be built from the request's `Host` header. The shim runs on the
+ * same machine as this server, but the Host header is whatever the *browser*
+ * used to reach us — and when omniterm is served through a proxy that is a
+ * public hostname, often behind authentication. On a hosted Linux box that made
+ * the shim POST to `https://<box>.example.com/t/<tab>/registry` with no session
+ * cookie and get **401**, so no browser ever reached the UI. The same code path
+ * worked on macOS purely because the developer browses `localhost:<port>` there,
+ * so the header happened to be loopback.
+ *
+ * `req.socket.localPort` is the port this connection actually landed on, which
+ * is correct under any proxying. `OMNITERM_PORT` is the fallback, matching
+ * startServer's own resolution order.
+ */
+export function registryUrlForRequest(
+  req: { socket?: { localPort?: number | null } },
+  tabId: string,
+): string {
+  const port = req.socket?.localPort ?? Number(process.env.OMNITERM_PORT) ?? null;
+  const resolved = Number.isFinite(port) && Number(port) > 0 ? Number(port) : 17717;
+  return `http://127.0.0.1:${resolved}/t/${tabId}/registry`;
+}
+
 export interface BrowserEntry {
   id: string;
   cdpUrl: string;
