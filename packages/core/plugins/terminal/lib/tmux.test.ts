@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { homedir, tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   buildNewSessionArgs,
   buildCleanEnvScript,
@@ -130,7 +132,24 @@ test('CLEAN_ENV_SCRIPT separates initialCommand from the exec with a blank line'
   // the exec and kill the pane when the command exits; a single newline would
   // let a trailing backslash line-continue INTO the exec line. The blank line
   // defends against both.
-  assert.ok(CLEAN_ENV_SCRIPT.includes('-lc "$cmd\n\nexec \\"\\$0\\"" "$shell"'));
+  assert.ok(CLEAN_ENV_SCRIPT.includes('\n$cmd\n\nexec \\"\\$0\\"" "$shell"'));
+});
+
+test('CLEAN_ENV_SCRIPT re-prepends the bin dir inside the login shell, before $cmd', () => {
+  // The re-prepend must be expanded by the LOGIN shell (so it runs after the
+  // profile pass), not by the outer sh that builds the -lc string — hence the
+  // escaped `\$`. And it must come before $cmd so an initialCommand that opens
+  // a URL already sees the shim dir.
+  // The LAST -lc line: the first one is the non-POSIX fallback, which
+  // deliberately carries no sh syntax.
+  const lcLine = CLEAN_ENV_SCRIPT.split('\n')
+    .filter((l) => l.includes('-lc '))
+    .at(-1)!;
+  assert.ok(
+    lcLine.includes('\\$OMNITERM_BIN_DIR\\${PATH:+:\\$PATH}'),
+    `unexpected -lc line: ${lcLine}`,
+  );
+  assert.ok(CLEAN_ENV_SCRIPT.indexOf('OMNITERM_BIN_DIR:') < CLEAN_ENV_SCRIPT.indexOf('\n$cmd'));
 });
 
 test('buildDefaultCommand wraps the script and single-quotes the shell path', () => {
@@ -295,4 +314,215 @@ test('clean-env wrapper: an extra name survives, an unlisted one does not', () =
   const lines = out.split('\n');
   assert.ok(lines.includes('MY_TOKEN=shhh'));
   assert.ok(!lines.some((l) => l.startsWith('MY_OTHER_TOKEN=')));
+});
+
+// --- issue #25: the shim dir must lead PATH after the login-profile pass ---
+
+// buildTabEnv stamps PATH=<bin dir>:<bootstrap> and the pane then runs a
+// LOGIN shell, whose profiles get the last word on PATH. Two shapes break
+// the prepend:
+//
+//   - Reorder: macOS /etc/profile runs `path_helper`, which rebuilds PATH
+//     with the system dirs FIRST and every other entry appended — the bin
+//     dir survives but lands behind /usr/bin, so an `open` shim loses to
+//     /usr/bin/open and interception silently stops working.
+//   - Replace: plenty of profiles (Debian's /etc/profile, nvm setups,
+//     hand-written dotfiles) assign PATH outright and drop the dir entirely.
+//
+// The wrapper therefore re-prepends $OMNITERM_BIN_DIR INSIDE the login shell,
+// after the profile pass. These tests drive the real wrapper through a real
+// sh with a HOME/.profile standing in for each shape.
+function runCleanEnvWithProfile(
+  profile: string,
+  env: Record<string, string>,
+  cmd: string,
+): string {
+  const home = mkdtempSync(path.join(tmpdir(), 'omnitest-profile-'));
+  try {
+    writeFileSync(path.join(home, '.profile'), profile);
+    return execFileSync('sh', ['-c', CLEAN_ENV_SCRIPT, 'omniterm-clean-env', '/bin/sh', cmd], {
+      encoding: 'utf-8',
+      input: '',
+      env: { HOME: home, PATH: '/usr/bin:/bin', ...env },
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function panePath(profile: string, env: Record<string, string>): string[] {
+  const out = runCleanEnvWithProfile(profile, env, 'echo "OMNIPATH=$PATH"; exit 0');
+  const line = out.split('\n').find((l) => l.startsWith('OMNIPATH='));
+  assert.ok(line, `no PATH line in wrapper output: ${out}`);
+  return line.slice('OMNIPATH='.length).split(':');
+}
+
+test('clean-env wrapper: the bin dir leads PATH when a profile REPLACES PATH', () => {
+  const entries = panePath('PATH=/usr/bin:/bin\nexport PATH\n', {
+    OMNITERM_BIN_DIR: '/opt/omniterm/bin',
+    PATH: '/usr/bin:/bin',
+  });
+  assert.equal(entries[0], '/opt/omniterm/bin', `bin dir not first: ${entries.join(':')}`);
+});
+
+test('clean-env wrapper: the bin dir leads PATH when a profile HOISTS the system dirs', () => {
+  // The path_helper shape: system dirs moved to the front of whatever PATH the
+  // pane started with. The bin dir must still outrank /usr/bin afterwards, or
+  // the `open` shim loses to /usr/bin/open and URL interception stops working.
+  const entries = panePath('PATH="/usr/bin:/bin:$PATH"\nexport PATH\n', {
+    OMNITERM_BIN_DIR: '/opt/omniterm/bin',
+    PATH: '/usr/bin:/bin',
+  });
+  assert.equal(entries[0], '/opt/omniterm/bin', `bin dir not first: ${entries.join(':')}`);
+  assert.ok(
+    entries.indexOf('/opt/omniterm/bin') < entries.indexOf('/usr/bin'),
+    `shim dir must outrank /usr/bin: ${entries.join(':')}`,
+  );
+});
+
+// The idempotence guard cannot be observed through a real login shell: the
+// HOST's /etc/profile runs too, and on macOS that is `path_helper`, which
+// reorders PATH no matter what ~/.profile says. So this one substitutes a stub
+// for $shell that honours `-lc` but runs NO startup files, leaving the wrapper's
+// re-prepend as the only thing that touches PATH.
+function runCleanEnvNoProfile(env: Record<string, string>, cmd: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'omnitest-stubshell-'));
+  try {
+    // Named `bash` so the wrapper's shell-family branch treats it as POSIX;
+    // the name is the only thing that selection looks at.
+    const stub = path.join(dir, 'bash');
+    // Called as `<stub> -lc <payload> <stub>`: run the payload with $0 set to
+    // $3, the way a real shell would, but with no profile or rc pass.
+    writeFileSync(stub, '#!/bin/sh\nexec /bin/sh -c "$2" "$3"\n', { mode: 0o755 });
+    // /bin/sh by absolute path: some callers pass an empty PATH on purpose,
+    // and a relative lookup would fail to spawn the wrapper at all.
+    return execFileSync('/bin/sh', ['-c', CLEAN_ENV_SCRIPT, 'omniterm-clean-env', stub, cmd], {
+      encoding: 'utf-8',
+      input: '',
+      env: { HOME: dir, PATH: '/usr/bin:/bin', ...env },
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('clean-env wrapper: a PATH that already leads with the bin dir is left alone', () => {
+  // A caller-supplied per-terminal PATH can already lead with it. Prepending
+  // again would duplicate the entry in every pane for no gain.
+  const out = runCleanEnvNoProfile(
+    { OMNITERM_BIN_DIR: '/opt/omniterm/bin', PATH: '/opt/omniterm/bin:/usr/bin:/bin' },
+    'echo "OMNIPATH=$PATH"; exit 0',
+  );
+  assert.ok(
+    out.includes('OMNIPATH=/opt/omniterm/bin:/usr/bin:/bin'),
+    `re-prepend must be a no-op when the dir already leads, got: ${out}`,
+  );
+});
+
+test('clean-env wrapper: the bin dir is prepended when PATH does not lead with it', () => {
+  // The counterpart, with the same no-profile isolation: prove the prepend
+  // itself is what puts the dir in front, not a side effect of a profile.
+  const out = runCleanEnvNoProfile(
+    { OMNITERM_BIN_DIR: '/opt/omniterm/bin', PATH: '/usr/bin:/bin' },
+    'echo "OMNIPATH=$PATH"; exit 0',
+  );
+  assert.ok(
+    out.includes('OMNIPATH=/opt/omniterm/bin:/usr/bin:/bin'),
+    `expected the bin dir prepended exactly once, got: ${out}`,
+  );
+});
+
+test('clean-env wrapper: with no OMNITERM_BIN_DIR the re-prepend is a no-op', () => {
+  // The dangerous regression here is an empty leading entry — in PATH an empty
+  // entry means the CURRENT DIRECTORY, so every `open`/`ls` in a tab would
+  // prefer a same-named file in cwd. (The exact entries are not asserted: the
+  // host's own /etc/profile runs during the login pass and legitimately adds
+  // its own — macOS's path_helper does exactly that.)
+  const entries = panePath('', { PATH: '/usr/bin:/bin' });
+  assert.ok(
+    !entries.some((e) => e === ''),
+    `an unset OMNITERM_BIN_DIR must not add an empty PATH entry: ${entries.join(':')}`,
+  );
+  assert.ok(entries.includes('/usr/bin'));
+});
+
+// --- review round 1: shells that cannot parse the PATH re-prepend -----------
+
+test('CLEAN_ENV_SCRIPT keeps a non-POSIX login shell on its old, working shape', () => {
+  // `defaultShell` is a free-form string in settings (the UI offers bash/zsh,
+  // but settings.json is hand-editable and PUT /api/settings validates
+  // nothing). fish/csh/nu cannot parse `case…esac`, `${VAR:-}` or `$0`, so
+  // embedding the re-prepend in THEIR `-lc` would print a syntax error and
+  // kill the pane on arrival — a regression from the plain `-l` they used to
+  // get. They must fall back rather than fail.
+  const script = CLEAN_ENV_SCRIPT;
+  assert.match(script, /case "\$\{shell##\*\/\}" in/);
+  assert.ok(
+    script.includes('exec env -i "$@" "$shell" -l\n'),
+    'the bare -l fallback for non-POSIX shells is gone',
+  );
+  for (const sh of ['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash']) {
+    assert.match(script, new RegExp(`\\b${sh}\\b[^)]*\\) ;;`), `${sh} must take the POSIX path`);
+  }
+});
+
+/**
+ * Run the wrapper with a stub standing in for the user's shell, and report the
+ * argv the stub was invoked with. That is how we can tell WHICH shape the
+ * wrapper chose without needing fish/csh installed.
+ */
+function shellArgvFor(shellBasename: string, cmd = ''): string[] {
+  const dir = mkdtempSync(path.join(tmpdir(), 'omnitest-shellpick-'));
+  try {
+    const stub = path.join(dir, shellBasename);
+    const out = path.join(dir, 'argv');
+    writeFileSync(stub, `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a" >> ${out}; done\n`, {
+      mode: 0o755,
+    });
+    execFileSync('sh', ['-c', CLEAN_ENV_SCRIPT, 'omniterm-clean-env', stub, cmd], {
+      encoding: 'utf-8',
+      input: '',
+      env: { HOME: dir, PATH: '/usr/bin:/bin', OMNITERM_BIN_DIR: '/opt/omniterm/bin' },
+    });
+    return readFileSync(out, 'utf-8').split('\n').filter((l) => l !== '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('clean-env wrapper: a POSIX shell is handed the re-prepend, fish is not', () => {
+  const bash = shellArgvFor('bash');
+  assert.equal(bash[0], '-lc');
+  assert.match(bash[1] ?? '', /OMNITERM_BIN_DIR/, 'bash must receive the PATH re-prepend');
+
+  // The regression this guards: fish previously got `-l` and a working pane.
+  const fish = shellArgvFor('fish');
+  assert.deepEqual(fish, ['-l'], 'fish must get the plain login shell, no sh syntax');
+});
+
+test('clean-env wrapper: a non-POSIX shell with an initialCommand keeps its old shape', () => {
+  // Not made BETTER here (that shape's `exec "$0"` is already meaningless to
+  // fish) — just not made worse. Byte-identical to the pre-fix behaviour.
+  const fish = shellArgvFor('fish', 'echo hi');
+  assert.equal(fish[0], '-lc');
+  assert.ok(!fish[1]?.includes('OMNITERM_BIN_DIR'), 'no sh syntax may reach a non-POSIX shell');
+  assert.ok(fish[1]?.startsWith('echo hi'), `unexpected command payload: ${fish[1]}`);
+});
+
+test('clean-env wrapper: a profile that clears PATH gains no trailing empty entry', () => {
+  // Mirror of the leading-`:` guard: a TRAILING empty field means the current
+  // directory just as a leading one does. The wrapper itself always has a
+  // usable PATH (it needs printenv and env), so the reachable version of this
+  // is a PROFILE unsetting PATH — after which our prepend is all that is left.
+  const entries = panePath('unset PATH\n', { OMNITERM_BIN_DIR: '/opt/omniterm/bin' });
+  assert.deepEqual(entries, ['/opt/omniterm/bin'], `trailing empty PATH entry: ${entries}`);
+});
+
+test('clean-env wrapper: a PATH that is exactly the bin dir is not duplicated', () => {
+  // The `case` guard's first pattern. Without it the dir would be prepended to
+  // itself, since a bare `<dir>` does not match the `<dir>:*` pattern.
+  const entries = panePath('PATH=/opt/omniterm/bin\nexport PATH\n', {
+    OMNITERM_BIN_DIR: '/opt/omniterm/bin',
+  });
+  assert.deepEqual(entries, ['/opt/omniterm/bin'], `duplicated bin dir: ${entries}`);
 });

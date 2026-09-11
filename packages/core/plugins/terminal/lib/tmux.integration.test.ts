@@ -284,3 +284,61 @@ test('createTmuxSession: a per-session value shadows the host passthrough for th
     setEnvPassthrough([]);
   }
 });
+
+// --- issue #25: URL interception needs the bin dir to LEAD PATH ------------
+
+test('createTmuxSession: the omniterm bin dir leads a pane PATH even when a profile reorders it', { skip }, async () => {
+  // The real end-to-end shape of issue #25. buildTabEnv stamps
+  // PATH=<bin dir>:<bootstrap>, but the pane's LOGIN shell runs the user's
+  // profiles afterwards and they get the last word. macOS /etc/profile runs
+  // `path_helper`, which rebuilds PATH with the system dirs FIRST and every
+  // other entry appended — the bin dir survives but sits behind /usr/bin, so
+  // the `open` shim loses to /usr/bin/open and nothing an agent does on macOS
+  // ever reaches the tab's browser registry.
+  //
+  // The ~/.profile written here is that exact reorder, made deterministic so
+  // the test means the same thing on Linux. `command -v open` inside the pane
+  // is the assertion that actually matters: PATH order is only interesting
+  // because it decides which `open` runs.
+  const binDir = path.join(WORK, 'omniterm-bin');
+  execFileSync('mkdir', ['-p', binDir]);
+  for (const name of ['open', 'xdg-open']) {
+    const file = path.join(binDir, name);
+    execFileSync('sh', ['-c', `printf '#!/bin/sh\\nexit 0\\n' > ${file} && chmod 755 ${file}`]);
+  }
+  const profile = path.join(WORK, '.profile');
+  execFileSync('sh', [
+    '-c',
+    // Hoist the system dirs to the front, exactly like path_helper.
+    `printf 'PATH="/usr/bin:/bin:$PATH"\\nexport PATH\\n' > ${profile}`,
+  ]);
+
+  try {
+    // Exactly what buildTabEnv stamps: the bootstrap PATH with NO shim-dir
+    // prepend, plus OMNITERM_BIN_DIR for the wrapper to act on.
+    createTmuxSession('it-shimpath', WORK, { ...TAB_ENV, OMNITERM_BIN_DIR: binDir });
+    const out = path.join(WORK, 'shimpath.out');
+    await waitPaneAlive('it-shimpath', 'shim PATH');
+    tmux([
+      'send-keys',
+      '-t',
+      '=it-shimpath:',
+      `{ echo "OMNIPATH=$PATH"; echo "OPEN=$(command -v open)"; echo __DUMP_DONE__; } > ${out}`,
+      'Enter',
+    ]);
+    const lines = await pollFor('shim PATH dump', envFileLines(out));
+
+    const pathLine = lines.find((l) => l.startsWith('OMNIPATH='));
+    assert.ok(pathLine, `no PATH line in pane dump: ${lines.join('|')}`);
+    const entries = pathLine.slice('OMNIPATH='.length).split(':');
+    assert.equal(entries[0], binDir, `bin dir must lead PATH, got: ${entries.join(':')}`);
+
+    // The payoff: the shim is what `open` resolves to, not /usr/bin/open.
+    assert.ok(
+      lines.includes(`OPEN=${path.join(binDir, 'open')}`),
+      `\`open\` must resolve to the shim, got: ${lines.filter((l) => l.startsWith('OPEN=')).join(',')}`,
+    );
+  } finally {
+    execFileSync('rm', ['-f', profile]);
+  }
+});

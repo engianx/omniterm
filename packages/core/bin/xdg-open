@@ -1,6 +1,14 @@
 #!/bin/sh
-# xdg-open shim — present in PATH only inside omniterm tmux sessions
-# (sessions.ts prepends our bin dir). Outside an omniterm tab the system
-# /usr/bin/xdg-open is unaffected. Forwards every URL/file argument to
-# omniterm-browser, which handles registration with the tab's registry.
-exec "$(dirname "$0")/omniterm-browser.js" "$@"
+# xdg-open shim — present in PATH only inside omniterm tmux sessions, where the
+# clean-env wrapper prepends our bin dir inside the pane's login shell (see
+# buildCleanEnvScript). Outside an omniterm tab the system /usr/bin/xdg-open is
+# unaffected. The macOS counterpart is the `open` shim next to this one.
+# Forwards every URL/file argument to omniterm-browser, which handles
+# registration with the tab's registry.
+# Our own directory via parameter expansion, not `dirname` — no coreutils
+# dependency, and the same shape the sibling `open` shim uses.
+case "$0" in
+  */*) dir=${0%/*} ;;
+  *) dir=. ;;
+esac
+exec "$dir/omniterm-browser.js" "$@"

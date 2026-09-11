@@ -1,0 +1,105 @@
+#!/bin/sh
+# `open` shim — present in PATH only inside omniterm tmux sessions, where the
+# clean-env wrapper prepends our bin dir inside the pane's login shell (see
+# buildCleanEnvScript). Outside an omniterm tab the system `open` is untouched.
+#
+# Why it exists: on macOS the canonical way to open a URL from a shell is
+# `open <url>`, and /usr/bin/open ignores $BROWSER completely. Without this
+# shim neither of omniterm's interception paths applies on macOS — $BROWSER is
+# never consulted and there is no xdg-open — so a URL an agent opens launches
+# the user's real Chrome with no CDP port and never registers with the tab's
+# browser registry.
+#
+# Unlike xdg-open, `open` is a general-purpose launcher on macOS: files,
+# directories, `-a AppName`, `-R`, `-e`, and more. Shadowing it is only safe if
+# everything that is not a plain http/https URL reaches the real `open`
+# unchanged, so the interception here is deliberately narrow — every argument
+# must be an http/https URL, or the whole invocation is handed straight through.
+#
+# On Linux there is usually no `open` at all (checked on Debian 12, Ubuntu
+# 22.04/24.04 and Fedora 41: kbd ships only `openvt`), so inside a tab this
+# shim adds the command rather than shadowing one. Where a system `open` does
+# exist — an old distro aliasing it to openvt, or one the user installed — the
+# pass-through keeps it working; where none exists, a non-URL argument gets the
+# shell's own "command not found" instead of an invented failure.
+
+# Our own directory, via parameter expansion rather than `dirname`: the shim
+# must keep working on the pass-through path even under a restricted PATH that
+# has no coreutils. The kernel hands a script's interpreter the full path, so
+# $0 normally has a slash; the fallback is for the case where it does not.
+case "$0" in
+  */*) dir=${0%/*} ;;
+  *) dir=. ;;
+esac
+
+# Every argument must be an http/https URL for us to take the invocation. One
+# flag, file, directory or non-web scheme disqualifies the whole thing:
+# `open -a Safari https://…` names an app explicitly and is an instruction we
+# must not override, and `open .` is a file-manager request, not a web one.
+intercept=yes
+[ "$#" -eq 0 ] && intercept=no
+for arg in "$@"; do
+  case "$arg" in
+    http://* | https://*) ;;
+    *)
+      intercept=no
+      break
+      ;;
+  esac
+done
+
+if [ "$intercept" = yes ]; then
+  # omniterm-browser takes one URL per invocation; the second and later calls
+  # are deferred into the already-running Chrome through its singleton IPC, so
+  # a multi-URL `open` still opens every tab.
+  status=0
+  for arg in "$@"; do
+    "$dir/omniterm-browser.js" "$arg" || status=$?
+  done
+  exit "$status"
+fi
+
+# Pass-through. The real `open` is the first one on PATH that is not this shim.
+# Picking the wrong one means exec'ing ourselves in a loop, so a candidate is
+# skipped on either of two checks: its RESOLVED directory is ours (raw PATH
+# strings would miss a trailing slash or a symlinked spelling), or it is
+# literally the same file as $0 (catches this shim symlinked into another
+# directory). `-ef` is not in POSIX test but every real /bin/sh has it — dash,
+# bash, zsh, ksh, busybox; where it is missing the check just falls back to the
+# directory compare, hence the stderr redirect.
+self=$(cd -- "$dir" 2>/dev/null && pwd -P)
+real=$(
+  # `set -f`: $PATH is unquoted below so IFS splits it into fields, which also
+  # exposes each field to pathname expansion — a PATH entry containing * ? or
+  # [...] would expand against the cwd instead of staying literal. Disabling
+  # globbing is free here; the subshell already contains the IFS change too.
+  set -f
+  IFS=:
+  for d in $PATH; do
+    [ -n "$d" ] || d=.
+    resolved=$(cd -- "$d" 2>/dev/null && pwd -P) || continue
+    if [ -n "$self" ] && [ "$resolved" = "$self" ]; then
+      continue
+    fi
+    [ -f "$d/open" ] && [ -x "$d/open" ] || continue
+    if [ "$d/open" -ef "$0" ] 2>/dev/null; then
+      continue
+    fi
+    printf '%s\n' "$d/open"
+    exit 0
+  done
+)
+
+if [ -z "$real" ]; then
+  # Nothing to delegate to. Deliberately NOT falling back to a hardcoded
+  # /usr/bin/open: this shim emulates "the next `open` on PATH", and reaching
+  # outside PATH would run a binary the caller's own PATH had excluded. So
+  # report it exactly as the shell would have, with the shell's exit status.
+  # On macOS the scan finds /usr/bin/open whenever /usr/bin is on PATH, which
+  # CLEAN_PATH_BASE guarantees; on a typical Linux host there is no `open` at
+  # all and this is the correct answer.
+  echo "open: command not found" >&2
+  exit 127
+fi
+
+exec "$real" "$@"

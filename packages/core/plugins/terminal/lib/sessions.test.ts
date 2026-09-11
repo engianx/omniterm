@@ -2,16 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSessionEnv, buildTabEnv } from './sessions.js';
 
-// Pins the env-leak fix on the tab-env side: the PATH stamped onto a tab
-// must be the fixed bootstrap PATH (plus at most the omniterm shim dir),
-// NEVER derived from the server's own process.env.PATH — that would carry
-// the env of whatever shell launched omniterm into every tab. The login
-// shell rebuilds the user's real PATH from profiles on top of this.
+// Pins the env-leak fix on the tab-env side: the PATH stamped onto a tab must
+// be exactly the fixed bootstrap PATH, NEVER derived from the server's own
+// process.env.PATH — that would carry the env of whatever shell launched
+// omniterm into every tab. The login shell rebuilds the user's real PATH from
+// profiles on top of this, and the clean-env wrapper adds the shim dir after it.
 test('buildTabEnv stamps a fixed bootstrap PATH, never the server process PATH', () => {
   const env = buildTabEnv('http://127.0.0.1:1/t/x/registry');
   assert.equal(env.OMNITERM_BROWSER_REGISTRY_URL, 'http://127.0.0.1:1/t/x/registry');
-  const entries = env.PATH.split(':');
-  assert.deepEqual(entries.slice(-6), [
+  assert.deepEqual(env.PATH.split(':'), [
     '/opt/homebrew/bin',
     '/usr/local/bin',
     '/usr/bin',
@@ -19,12 +18,6 @@ test('buildTabEnv stamps a fixed bootstrap PATH, never the server process PATH',
     '/usr/sbin',
     '/sbin',
   ]);
-  // At most one extra entry, prepended: the omniterm shim bin dir (present
-  // only when the browser shim resolved on disk).
-  assert.ok(entries.length <= 7, `unexpected PATH entries: ${env.PATH}`);
-  if (entries.length === 7) {
-    assert.ok(env.BROWSER, 'a shim-dir PATH prepend implies BROWSER is set');
-  }
 });
 
 // Precedence for a caller-supplied per-terminal environment (spec 001 FR-012 /
@@ -48,4 +41,24 @@ test('buildSessionEnv layers caller values over the tab env, caller wins', () =>
   const collided = buildSessionEnv(registryUrl, { PATH: '/caller/bin' });
   assert.equal(collided.PATH, '/caller/bin');
   assert.notEqual(base.PATH, '/caller/bin');
+});
+
+// Issue #25: a PATH prepend stamped here cannot survive the pane's login
+// profiles (macOS path_helper demotes it behind /usr/bin; many Linux profiles
+// drop it), so the clean-env wrapper puts the shim dir on PATH inside the login
+// shell instead. It reads the dir from $OMNITERM_BIN_DIR — if buildTabEnv stops
+// stamping that name the wrapper's prepend becomes a silent no-op and `open`
+// falls back to /usr/bin/open, with no symptom other than the bug coming back.
+test('buildTabEnv stamps OMNITERM_BIN_DIR whenever the browser shim is available', () => {
+  const env = buildTabEnv('http://127.0.0.1:1/t/x/registry');
+  if (!env.BROWSER) return; // shim not on disk in this layout; nothing is stamped
+  assert.ok(env.OMNITERM_BIN_DIR, 'BROWSER is stamped but OMNITERM_BIN_DIR is not');
+  // BROWSER lives in that same dir — one dir, one source of truth.
+  assert.equal(env.BROWSER, `${env.OMNITERM_BIN_DIR}/omniterm-browser.js`);
+  // The shim dir must NOT also be prepended here: the wrapper prepends it in
+  // the login shell, and doing both only duplicates the entry.
+  assert.ok(
+    !env.PATH.startsWith(`${env.OMNITERM_BIN_DIR}:`),
+    'shim dir is prepended twice (here and in the clean-env wrapper)',
+  );
 });

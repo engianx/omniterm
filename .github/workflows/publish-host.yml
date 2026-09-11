@@ -237,7 +237,7 @@ jobs:
         working-directory: apps/omniterm
         run: |
           set -euo pipefail
-          for f in standalone/server/server.js bin/omniterm.js bin/omniterm-browser.js bin/xdg-open; do
+          for f in standalone/server/server.js bin/omniterm.js bin/omniterm-browser.js bin/xdg-open bin/open; do
             if [ ! -s "$f" ]; then
               printf '::%s::%s\n' error "Missing or empty artifact: $f"
               exit 1
