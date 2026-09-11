@@ -36,17 +36,20 @@ import { OMNITERM_BIN_DIR } from '../../../lib/paths.js';
 // Absolute path to the system-browser shim. Anything inside an omniterm
 // tmux session that respects $BROWSER (gcloud, gh, Python webbrowser, ...)
 // routes URL launches through this script, which registers Chrome with
-// the tab's registry so the user can interact with it remotely. Tools
-// that bypass $BROWSER and call `xdg-open` directly are caught by the
-// PATH prepend in buildTabEnv (an `xdg-open` shim sits next to this script).
+// the tab's registry so the user can interact with it remotely. Tools that
+// bypass $BROWSER and call `xdg-open` (Linux) or `open` (macOS) directly are
+// caught instead by the shims sitting next to this script, which the clean-env
+// wrapper puts on the pane's PATH. On macOS that is the ONLY interception path
+// there is: /usr/bin/open ignores $BROWSER and there is no xdg-open (issue #25).
 //
 // Resolved at module load to either a real on-disk path or null. Null
 // happens when the package.json walk-up couldn't find anything (e.g.,
 // bundled deployments with no surrounding fs hierarchy) OR when the
 // resolved bin/ doesn't actually contain omniterm-browser.js (e.g.,
 // testbox bundles @omniterm/core but doesn't stage the shim into its
-// own bin/). In null cases buildTabEnv simply omits BROWSER+PATH —
-// tools fall back to system defaults; tab creation still works.
+// own bin/). In null cases buildTabEnv omits BROWSER and OMNITERM_BIN_DIR
+// (it always stamps the bootstrap PATH) — URL launches fall back to system
+// defaults, and tab creation still works.
 const OMNITERM_BROWSER_PATH: string | null = OMNITERM_BIN_DIR
   ? path.join(OMNITERM_BIN_DIR, 'omniterm-browser.js')
   : null;
@@ -72,19 +75,23 @@ const CLEAN_PATH_BASE = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbi
  * also be in CLEAN_ENV_VARS (tmux.ts) or the clean-env wrapper drops it
  * before the shell starts.
  *
- * The shim-dir PATH prepend is best-effort: login-shell profiles that
- * rewrite PATH from scratch (e.g. Debian's /etc/profile) can push the
- * shim dir back or out; BROWSER is the primary xdg-open interception
- * mechanism, the PATH shim only catches tools that ignore $BROWSER.
+ * The shim dir is stamped as OMNITERM_BIN_DIR, NOT prepended onto the PATH
+ * here: the clean-env wrapper puts it on PATH inside the pane's login shell,
+ * after the profile pass (see buildCleanEnvScript). Prepending it here as well
+ * would not help — macOS's path_helper demotes it behind /usr/bin and many
+ * Linux profiles drop it outright (issue #25) — and would only leave a
+ * duplicate entry once the wrapper prepends it again. Every pane omniterm can
+ * create (new-session argv and the session's default-command, which covers
+ * splits and prefix-c windows) goes through that wrapper, so it is the one
+ * place the dir needs to be added.
  */
 export function buildTabEnv(registryUrl: string): Record<string, string> {
   const env: Record<string, string> = { OMNITERM_BROWSER_REGISTRY_URL: registryUrl };
   if (OMNITERM_BROWSER_AVAILABLE && OMNITERM_BROWSER_PATH && OMNITERM_BIN_DIR) {
     env.BROWSER = OMNITERM_BROWSER_PATH;
-    env.PATH = `${OMNITERM_BIN_DIR}:${CLEAN_PATH_BASE}`;
-  } else {
-    env.PATH = CLEAN_PATH_BASE;
+    env.OMNITERM_BIN_DIR = OMNITERM_BIN_DIR;
   }
+  env.PATH = CLEAN_PATH_BASE;
   return env;
 }
 
@@ -286,6 +293,19 @@ export interface AdoptSessionOptions {
   knownCwd?: string;
 }
 
+/**
+ * KNOWN LIMITATION (issue #25): adoption does not re-stamp the session env or
+ * `default-command`. A tmux session created by an OLDER omniterm carries that
+ * version's `default-command` baked in, so panes opened in it after an upgrade
+ * still run the old wrapper and miss the shim-dir PATH prepend — `open <url>`
+ * keeps resolving to /usr/bin/open there. Recreating the tab fixes it.
+ *
+ * Deliberately not "fixed" by stamping here: it cannot help the pane that is
+ * already running (a process's env is fixed at exec), and applying our
+ * clean-env `default-command` to a session the user created OUTSIDE omniterm
+ * (README: omniterm adopts foreign tmux sessions) would start scrubbing an
+ * environment they never asked us to touch.
+ */
 export function adoptSession(tmuxSessionName: string, opts?: AdoptSessionOptions): Session {
   const t0 = Date.now();
   const port = allocatePort();

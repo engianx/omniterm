@@ -5,6 +5,7 @@ standalone/
 # Bin shims copied from @omniterm/core at build time (only bin/omniterm.js is source)
 bin/omniterm-browser.js
 bin/xdg-open
+bin/open
 
 # Tarballs from pnpm pack
 *.tgz

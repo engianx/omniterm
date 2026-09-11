@@ -10,9 +10,9 @@
 #      (no standalone/public/: vite's publicDir already copies
 #       @omniterm/core/public/* into dist/client/, and startServer mounts
 #       clientDir first, so a second copy could never be served.)
-#   4. Copy bin/omniterm-browser.js + bin/xdg-open from @omniterm/core/bin/
-#      into apps/omniterm/bin/ so OMNITERM_BIN_DIR's package.json walk-up
-#      finds them at runtime.
+#   4. Copy bin/omniterm-browser.js + the bin/xdg-open and bin/open PATH shims
+#      from @omniterm/core/bin/ into apps/omniterm/bin/ so OMNITERM_BIN_DIR's
+#      package.json walk-up finds them at runtime.
 #
 # Runtime npm deps (express, http-proxy, marked, etc.) stay in package.json
 # `dependencies` and are installed by npm at install-time — not bundled.
@@ -20,7 +20,8 @@
 # Layout in the published tarball:
 #   bin/omniterm.js              launcher
 #   bin/omniterm-browser.js     system-browser shim (used by tab tmux env)
-#   bin/xdg-open                 xdg-open shim (PATH-injected in tabs)
+#   bin/xdg-open                 xdg-open shim (PATH-injected in tabs, Linux)
+#   bin/open                     open shim (PATH-injected in tabs, macOS)
 #   standalone/server/server.js  bundled server entry
 #   standalone/client/           vite build output, incl. static public assets
 
@@ -65,16 +66,18 @@ cp -r "$CORE_DIR/dist/client/." "$APP_DIR/standalone/client/"
 echo "[omniterm] Copying bin shims from @omniterm/core..."
 cp "$CORE_DIR/bin/omniterm-browser.js" "$APP_DIR/bin/omniterm-browser.js"
 cp "$CORE_DIR/bin/xdg-open" "$APP_DIR/bin/xdg-open"
+cp "$CORE_DIR/bin/open" "$APP_DIR/bin/open"
 # Note: this chmod is a no-op under `pnpm pack` (the publish path): pnpm
 # normalizes non-bin files to 0644 in the tarball regardless of source mode.
 # Only files in package.json `bin` come out 0755. So:
 #   - omniterm-browser.js gets +x via the `bin` map.
-#   - xdg-open can't go in `bin` (would shadow /usr/bin/xdg-open in PATH);
-#     it's fixed up by the package's `postinstall` on the user's machine.
+#   - xdg-open and open can't go in `bin` (that would shadow /usr/bin/xdg-open
+#     and /usr/bin/open for the whole machine, not just inside omniterm tabs);
+#     they're fixed up by the package's `postinstall` on the user's machine.
 # Left here so the local apps/omniterm/bin/ tree still mirrors install-time
 # layout, and so a future switch to `npm pack` (which preserves modes)
 # would Just Work.
-chmod 755 "$APP_DIR/bin/omniterm-browser.js" "$APP_DIR/bin/xdg-open"
+chmod 755 "$APP_DIR/bin/omniterm-browser.js" "$APP_DIR/bin/xdg-open" "$APP_DIR/bin/open"
 
 # Guard: the eager client entry chunk must stay small. Editor grammars are
 # code-split into on-demand chunks (see packages/core/app/components/

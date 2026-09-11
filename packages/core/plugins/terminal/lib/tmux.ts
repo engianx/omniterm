@@ -96,9 +96,10 @@ export interface CreateTmuxSessionOptions {
  * - DISPLAY/WAYLAND_DISPLAY/XAUTHORITY/XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS
  *   keep GUI launches working on Linux desktops, mirroring what a local
  *   terminal emulator would pass.
- * - OMNITERM_BROWSER_REGISTRY_URL/BROWSER/PATH are omniterm's own
- *   deliberate per-tab vars, stamped via `tmux -e` (see buildTabEnv); the
- *   wrapper lets them back through.
+ * - OMNITERM_BROWSER_REGISTRY_URL/BROWSER/PATH/OMNITERM_BIN_DIR are
+ *   omniterm's own deliberate per-tab vars, stamped via `tmux -e` (see
+ *   buildTabEnv); the wrapper lets them back through. OMNITERM_BIN_DIR is
+ *   what the wrapper re-prepends to PATH after the login-profile pass.
  */
 export const CLEAN_ENV_VARS = [
   'TERM',
@@ -128,6 +129,7 @@ export const CLEAN_ENV_VARS = [
   'OMNITERM_BROWSER_REGISTRY_URL',
   'BROWSER',
   'PATH',
+  'OMNITERM_BIN_DIR',
 ];
 
 /**
@@ -140,20 +142,43 @@ export const CLEAN_ENV_VARS = [
  * stays unset rather than becoming an empty string; printenv is not
  * strictly POSIX but universal on macOS/BSD/Linux, and the one fork per
  * allowlisted var per pane start is accepted — the login-profile pass
- * dominates), then execs the shell under `env -i` with only those. The
- * shell runs as a LOGIN shell so the user's profiles rebuild PATH etc.
- * from scratch — the same convention macOS terminal emulators use. With
- * initialCommand, `<shell> -lc` does the profile pass, runs the command,
- * then execs an interactive shell ($0 is set to the shell path) which
- * sources the rc files — together the same file set as an interactive
- * login shell, without a double profile pass. A newline (not `;`)
- * separates command and exec so a trailing `#` comment in the command
- * can't swallow the exec, and the blank line before the exec absorbs a
- * trailing-backslash line-continuation so it can't merge into the exec
- * line either.
+ * dominates), then execs the shell under `env -i` with only those.
+ *
+ * The shell always runs as `<shell> -lc "<re-prepend>; <cmd>; exec $0"`, which
+ * is a LOGIN shell, so the user's profiles rebuild PATH etc. from scratch —
+ * the same convention macOS terminal emulators use — and then execs an
+ * interactive shell ($0 is the shell path) which sources the rc files.
+ * Together that is the same file set as an interactive login shell, without a
+ * double profile pass. With no initialCommand `$cmd` expands to nothing and
+ * the pane is just that interactive shell — one shape for both cases, which is
+ * what lets the PATH fix below apply to every pane. (A plain `<shell> -l` for
+ * the no-command case, as this used to do, leaves nowhere to run anything
+ * after the profiles. The visible difference is that bash panes now source
+ * ~/.bashrc, like the initialCommand path already did.) A newline (not `;`) separates
+ * command and exec so a trailing `#` comment in the command can't swallow the
+ * exec, and the blank line before the exec absorbs a trailing-backslash
+ * line-continuation so it can't merge into the exec line either.
+ *
+ * The first line of that `-lc` string puts $OMNITERM_BIN_DIR (the URL-shim
+ * dir: omniterm-browser.js, xdg-open, open) on PATH. It has to run HERE,
+ * inside the login shell AFTER the profile pass, because no PATH stamped on
+ * the tmux session survives that pass (issue #25): macOS's /etc/profile runs
+ * `path_helper`, which rebuilds PATH with the system dirs first and every
+ * other entry appended — demoting the shim dir behind /usr/bin, where the
+ * `open` shim loses to /usr/bin/open — and many Linux profiles assign PATH
+ * outright and drop the dir entirely. That is also why buildTabEnv stamps the
+ * dir as a variable and does NOT prepend it to the PATH it stamps.
+ *
+ * The `case` keeps the prepend idempotent when PATH already leads with the
+ * dir, and the `-n` guard matters: prepending an empty OMNITERM_BIN_DIR would
+ * leave a leading `:`, which in PATH means the current directory. Still
+ * best-effort against the rc pass that follows the exec — an rc that ASSIGNS
+ * PATH can demote the dir again — but every common rc prepends instead.
  *
  * MUST NOT contain single quotes: buildDefaultCommand embeds it in a
- * single-quoted `sh -c` string for the tmux default-command option.
+ * single-quoted `sh -c` string for the tmux default-command option. That is
+ * also why the bin dir travels as an env var rather than being interpolated
+ * into this script — a user path containing a quote would break the embedding.
  *
  * `extraNames` widens the allowlist for one session (spec 001 FR-011/FR-012):
  * the host-level passthrough list plus whatever names that session sets. They are
@@ -161,6 +186,16 @@ export const CLEAN_ENV_VARS = [
  * would be code injection into this script, and through default-command into
  * every pane the session ever opens.
  */
+/**
+ * Shell basenames whose `-lc` accepts POSIX sh syntax, so the wrapper can run
+ * its PATH re-prepend inside them. Anything else — fish, csh/tcsh, nu, elvish,
+ * xonsh — takes the fallback branch and starts exactly as it did before this
+ * file learned to fix PATH. Matching is on the basename, so an unrecognised
+ * spelling (a versioned `bash-5.2`, a wrapper script) fails SAFE: the pane
+ * still starts, it just misses the PATH fix.
+ */
+const POSIX_SHELLS = ['sh', 'ash', 'bash', 'dash', 'ksh', 'ksh93', 'mksh', 'zsh'];
+
 export function buildCleanEnvScript(extraNames: readonly string[] = []): string {
   const names = [...CLEAN_ENV_VARS];
   for (const name of extraNames) if (!names.includes(name)) names.push(name);
@@ -170,13 +205,26 @@ export function buildCleanEnvScript(extraNames: readonly string[] = []): string 
     `for v in ${names.join(' ')}; do`,
     '  if val=$(printenv "$v"); then set -- "$@" "$v=$val"; fi',
     'done',
-    'if [ -n "$cmd" ]; then',
-    '  exec env -i "$@" "$shell" -lc "$cmd',
+    // Non-POSIX login shells (fish, csh/tcsh, nu, elvish) cannot parse the
+    // payload below; they get the pre-existing shapes verbatim, so they keep
+    // working exactly as before — without the PATH fix, which cannot be
+    // expressed portably across them.
+    `case "\${shell##*/}" in`,
+    `  ${POSIX_SHELLS.join(' | ')}) ;;`,
+    '  *)',
+    '    if [ -n "$cmd" ]; then',
+    '      exec env -i "$@" "$shell" -lc "$cmd',
     '',
     'exec \\"\\$0\\"" "$shell"',
-    'else',
-    '  exec env -i "$@" "$shell" -l',
-    'fi',
+    '    else',
+    '      exec env -i "$@" "$shell" -l',
+    '    fi',
+    '    ;;',
+    'esac',
+    'exec env -i "$@" "$shell" -lc "if [ -n \\"\\${OMNITERM_BIN_DIR:-}\\" ]; then case \\"\\$PATH\\" in \\"\\$OMNITERM_BIN_DIR\\" | \\"\\$OMNITERM_BIN_DIR\\":*) ;; *) PATH=\\"\\$OMNITERM_BIN_DIR\\${PATH:+:\\$PATH}\\"; export PATH ;; esac; fi',
+    '$cmd',
+    '',
+    'exec \\"\\$0\\"" "$shell"',
   ].join('\n');
 }
 
