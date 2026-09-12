@@ -732,53 +732,72 @@ async function placeInspector() {
 
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    // iframe `load` fires before DevTools finishes its asynchronous startup.
-    // Calling instance() before the real app is initialized constructs it too
-    // early and Chrome throws (for example, before en-US locale registration).
-    // The screencast DOM is created by the initialized app, so use it as the
-    // readiness signal before retrieving the already-existing singleton.
-    if (!document.querySelector('.screencast')) {
+    // iframe `load` fires before DevTools finishes its asynchronous startup, so
+    // the app read below can come back half-built and must be retried.
+    //
+    // This used to gate on `document.querySelector('.screencast')`, taking the
+    // screencast DOM as the "app is initialized" signal. That is a Chrome
+    // INTERNAL class name, and it moved: on Chrome 153 there is no light-DOM
+    // element with class `screencast` at all (DevTools now renders through ~141
+    // shadow roots; the nearest surviving name is `.screencast-navigation`).
+    // The gate therefore never opened, the loop ran to WAIT_TIMEOUT_MS, and the
+    // whole shim reported `unsupported` and reverted — showing stock DevTools
+    // with its inspector and border, even though every API it needed was
+    // present and working the entire time.
+    //
+    // So gate on what this code actually consumes — a ScreencastApp exposing
+    // both `screencastView` and `rootSplitWidget` — instead of on a DOM class
+    // that Chrome is free to rename. Measured on Chrome 153: instance() does not
+    // throw when called early, returns an app missing those fields, and does NOT
+    // cache that half-built state — the next poll 100ms later yields a usable
+    // one. instance() is still wrapped, because a Chrome that DOES throw during
+    // startup (the en-US locale registration case this comment used to cite)
+    // must be retried rather than abort the shim.
+    currentStage = 'read ScreencastApp instance';
+    let app;
+    try {
+      app = ScreencastApp.instance();
+    } catch {
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
+    const split = app?.rootSplitWidget;
+    if (!app?.screencastView || !split) {
       await sleep(POLL_INTERVAL_MS);
       continue;
     }
 
-    currentStage = 'read ScreencastApp instance';
-    const app = ScreencastApp.instance();
-    const split = app?.rootSplitWidget;
+    // Both parts exist (the poll above guarantees it), which also means the page
+    // target has arrived — applying the choice before modelAdded() calls
+    // showBoth() would let that later call overwrite it.
+    //
+    // Install the frame overrides before touching the split. Every placement
+    // triggers a Widget resize, and the resize path must already be running
+    // through the serialized refit scheduler when it does.
+    const frame = installCompactScreencastFrame(app.screencastView);
+    const clipboard = installScreencastClipboard(app.screencastView);
 
-    // Wait for the page target as well as the split. Applying the choice before
-    // modelAdded() calls showBoth() would let that later call overwrite it.
-    if (app?.screencastView && split) {
-      // Install the frame overrides before touching the split. Every placement
-      // triggers a Widget resize, and the resize path must already be running
-      // through the serialized refit scheduler when it does.
-      const frame = installCompactScreencastFrame(app.screencastView);
-      const clipboard = installScreencastClipboard(app.screencastView);
-
-      currentStage = `place inspector on ${requestedPosition}`;
-      const applied = applyInspectorPosition(split, requestedPosition);
-      if (!applied.ok) {
-        // Both handles were installed for a screencast we then failed to
-        // place. They only make sense as part of that arrangement — the
-        // clipboard bridge in particular claims copy/paste chords on behalf
-        // of a canvas that is now laid out by stock DevTools — so roll them
-        // back instead of leaving them armed. Same reasoning as the frame
-        // handle's own degrade path.
-        clipboard.revert();
-        frame.revert();
-        recordState('unsupported', applied.reason);
-        return;
-      }
-
-      listenForParentMessages(split, frame, clipboard);
-      recordState(
-        requestedPosition,
-        `${describeSplitState(split)}; ${frame.state}; ${clipboard.state}`,
-      );
+    currentStage = `place inspector on ${requestedPosition}`;
+    const applied = applyInspectorPosition(split, requestedPosition);
+    if (!applied.ok) {
+      // Both handles were installed for a screencast we then failed to
+      // place. They only make sense as part of that arrangement — the
+      // clipboard bridge in particular claims copy/paste chords on behalf
+      // of a canvas that is now laid out by stock DevTools — so roll them
+      // back instead of leaving them armed. Same reasoning as the frame
+      // handle's own degrade path.
+      clipboard.revert();
+      frame.revert();
+      recordState('unsupported', applied.reason);
       return;
     }
 
-    await sleep(POLL_INTERVAL_MS);
+    listenForParentMessages(split, frame, clipboard);
+    recordState(
+      requestedPosition,
+      `${describeSplitState(split)}; ${frame.state}; ${clipboard.state}`,
+    );
+    return;
   }
 
   recordState('unsupported', 'Screencast split view did not become available');
