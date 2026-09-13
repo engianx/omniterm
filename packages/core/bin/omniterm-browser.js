@@ -351,19 +351,38 @@ async function closeExistingBrowser(ownerPid) {
     deadPort = (await readDevToolsActivePort(1_000)).port;
   } catch {}
 
+  // SIGTERM first so Chrome can flush its profile, then SIGKILL if it will not
+  // go. A graceful headless shutdown can outlast any grace period worth waiting
+  // — measured at over 20s on macOS under a minimal environment — and a `close`
+  // that leaves the browser running is worse than an unclean exit, because the
+  // next call takes the warm path against it.
+  let died = !Number.isFinite(ownerPid);
   if (Number.isFinite(ownerPid)) {
-    try {
-      process.kill(ownerPid, 'SIGTERM');
-    } catch {}
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline) {
+    for (const signal of ['SIGTERM', 'SIGKILL']) {
       try {
-        process.kill(ownerPid, 0);
+        process.kill(ownerPid, signal);
       } catch {
+        died = true;
         break;
       }
-      await new Promise((r) => setTimeout(r, 200));
+      const deadline = Date.now() + (signal === 'SIGTERM' ? 5_000 : 5_000);
+      while (Date.now() < deadline) {
+        try {
+          process.kill(ownerPid, 0);
+        } catch {
+          died = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (died) break;
     }
+  }
+  if (!died) {
+    // Do NOT clear the markers: they are the only record of the owner, and a
+    // caller that thinks the browser is gone will cold-start a second Chrome
+    // against the same profile.
+    return false;
   }
   for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort']) {
     try {
@@ -371,6 +390,7 @@ async function closeExistingBrowser(ownerPid) {
     } catch {}
   }
   if (deadPort) await deregisterPort(deadPort);
+  return true;
 }
 
 /** Remove registry entries whose CDP endpoint is the port we just shut down. */
@@ -402,7 +422,12 @@ async function main() {
       console.error('[omniterm-browser] no running browser to close');
       return;
     }
-    await closeExistingBrowser(owner.pid);
+    const closed = await closeExistingBrowser(owner.pid);
+    if (!closed) {
+      throw new Error(
+        `Could not stop the browser (pid ${owner.pid}); it survived SIGTERM and SIGKILL.`,
+      );
+    }
     console.error(`[omniterm-browser] closed browser pid=${owner.pid}`);
     return;
   }

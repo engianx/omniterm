@@ -1,7 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync, lstatSync, mkdtempSync, readlinkSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import { platform, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -60,12 +60,28 @@ interface Registration {
 function startRegistry(): Promise<{
   url: string;
   received: Promise<Registration>;
+  deleted: string[];
   close: () => void;
 }> {
   return new Promise((resolveServer) => {
     let resolveHit: (r: Registration) => void;
     const received = new Promise<Registration>((r) => (resolveHit = r));
+    const listed: { id: string; browserCdpUrl: string }[] = [];
+    const deleted: string[] = [];
     const server = http.createServer((req, res) => {
+      // GET /browsers + DELETE /browsers/:id exist so the --close path's
+      // deregistration is exercised rather than silently skipped.
+      if (req.method === 'GET' && req.url?.endsWith('/browsers')) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ browsers: listed }));
+        return;
+      }
+      if (req.method === 'DELETE') {
+        deleted.push(req.url ?? '');
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{}');
+        return;
+      }
       if (req.method !== 'POST' || !req.url?.endsWith('/browsers')) {
         res.writeHead(404).end();
         return;
@@ -76,7 +92,9 @@ function startRegistry(): Promise<{
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ id: '1', deduped: false }));
         try {
-          resolveHit(JSON.parse(body) as Registration);
+          const reg = JSON.parse(body) as Registration;
+          listed.push({ id: String(listed.length + 1), browserCdpUrl: reg.cdpUrl });
+          resolveHit(reg);
         } catch {
           /* assertion below reports the malformed body */
         }
@@ -87,6 +105,7 @@ function startRegistry(): Promise<{
       resolveServer({
         url: `http://127.0.0.1:${port}/t/test/registry`,
         received,
+        deleted,
         close: () => server.close(),
       });
     });
@@ -256,6 +275,111 @@ test('a non-URL `open` argument never launches a browser or registers', { skip }
       new Promise<false>((r) => setTimeout(() => r(false), 2000)),
     ]);
     assert.equal(registered, false, 'a non-URL argument registered with the registry');
+  } finally {
+    registry.close();
+  }
+});
+
+/** Run the browser shim the way a pane does, against a dedicated user-data-dir. */
+function runShim(args: string[], udd: string, registryUrl: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      path.join(BIN_DIR, 'omniterm-browser.js'),
+      args,
+      {
+        timeout: 60_000,
+        env: {
+          PATH: [BIN_DIR, path.dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+          HOME: udd,
+          OMNITERM_BROWSER_REGISTRY_URL: registryUrl,
+          OMNITERM_BROWSER_UDD: path.join(udd, 'profile'),
+          OMNITERM_BROWSER_HEADLESS: '1',
+          ...(process.env.OMNITERM_CHROME_PATH
+            ? { OMNITERM_CHROME_PATH: process.env.OMNITERM_CHROME_PATH }
+            : {}),
+        },
+      },
+      (err) => (err ? reject(err) : resolve()),
+    );
+  });
+}
+
+/** The page targets the browser owning `udd` currently has open. */
+async function pageUrls(udd: string): Promise<string[]> {
+  const portFile = path.join(udd, 'profile', 'DevToolsActivePort');
+  if (!existsSync(portFile)) return [];
+  const port = parseInt(readFileSync(portFile, 'utf-8').split('\n')[0] ?? '', 10);
+  if (!Number.isFinite(port)) return [];
+  const res = await fetch(`http://127.0.0.1:${port}/json/list`);
+  const targets = (await res.json()) as { type: string; url: string }[];
+  return targets.filter((t) => t.type === 'page').map((t) => t.url);
+}
+
+// Regression: the warm path used to spawn a second Chrome and rely on Chrome's
+// SINGLETON IPC to hand the URL to the running instance. Headless Chrome does
+// not service that handoff, so on any display-less machine the second and every
+// later call opened nothing while still printing `registered` — $BROWSER worked
+// exactly once per Chrome. Asserting page COUNT and CONTENT, because the old
+// code reported success either way; only the tab list tells the truth.
+test('a second call opens another tab in the running browser', { skip }, async () => {
+  const registry = await startRegistry();
+  const udd = mkdtempSync(path.join(tmpdir(), 'omnitest-udd-'));
+  udds.push(udd);
+
+  try {
+    await runShim(['https://example.com/first'], udd, registry.url);
+    const owner = owningPid(path.join(udd, 'profile'));
+    if (owner !== null) spawnedPids.push(owner);
+    assert.deepEqual(await pageUrls(udd), ['https://example.com/first']);
+
+    // The warm path: same user-data-dir, browser already running.
+    await runShim(['https://example.com/second'], udd, registry.url);
+    const after = await pageUrls(udd);
+    assert.equal(after.length, 2, `warm call did not open a tab; pages: ${after.join(', ')}`);
+    assert.ok(
+      after.includes('https://example.com/second'),
+      `the requested URL was never opened; pages: ${after.join(', ')}`,
+    );
+  } finally {
+    registry.close();
+  }
+});
+
+// Regression: there was no supported way to stop the browser, so a stuck
+// instance could only be cleared by hand-killing the pid in SingletonLock.
+// --close must actually stop it (not just deregister) and leave no singleton
+// markers, or the next call takes the warm path against a dead browser.
+test('--close stops the browser and clears its singleton markers', { skip }, async () => {
+  const registry = await startRegistry();
+  const udd = mkdtempSync(path.join(tmpdir(), 'omnitest-udd-'));
+  udds.push(udd);
+
+  try {
+    await runShim(['https://example.com'], udd, registry.url);
+    const owner = owningPid(path.join(udd, 'profile'));
+    assert.ok(owner !== null && alive(owner), 'no browser was started to close');
+    spawnedPids.push(owner);
+
+    await runShim(['--close'], udd, registry.url);
+
+    const deadline = Date.now() + 20_000;
+    while (alive(owner) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(alive(owner), false, `--close left the browser running (pid ${owner})`);
+
+    for (const marker of ['SingletonLock', 'SingletonCookie', 'DevToolsActivePort']) {
+      assert.ok(
+        !existsSync(path.join(udd, 'profile', marker)),
+        `--close left ${marker} behind, so the next call takes the warm path against a dead browser`,
+      );
+    }
+
+    // And the tab's panel must stop listing a browser whose CDP is gone.
+    assert.ok(
+      registry.deleted.length > 0,
+      'the dead browser was never deregistered from the tab registry',
+    );
   } finally {
     registry.close();
   }
