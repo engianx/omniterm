@@ -356,20 +356,34 @@ async function closeExistingBrowser(ownerPid) {
   // — measured at over 20s on macOS under a minimal environment — and a `close`
   // that leaves the browser running is worse than an unclean exit, because the
   // next call takes the warm path against it.
+  // Only ESRCH means the process is gone. EPERM means it EXISTS but belongs to
+  // another uid — the case readSingleton() above already calls out as common in
+  // containers and rootless setups. Treating any throw as death is how a close
+  // reports success over a browser that is still running.
+  const isGone = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (err) {
+      return Boolean(err) && err.code === 'ESRCH';
+    }
+  };
+
+  const GRACE_MS = 5_000;
   let died = !Number.isFinite(ownerPid);
   if (Number.isFinite(ownerPid)) {
     for (const signal of ['SIGTERM', 'SIGKILL']) {
       try {
         process.kill(ownerPid, signal);
-      } catch {
-        died = true;
+      } catch (err) {
+        // ESRCH here means it died before we signalled; anything else (EPERM)
+        // means we cannot signal it, so escalating will not help either.
+        if (err && err.code === 'ESRCH') died = true;
         break;
       }
-      const deadline = Date.now() + (signal === 'SIGTERM' ? 5_000 : 5_000);
+      const deadline = Date.now() + GRACE_MS;
       while (Date.now() < deadline) {
-        try {
-          process.kill(ownerPid, 0);
-        } catch {
+        if (isGone(ownerPid)) {
           died = true;
           break;
         }
@@ -460,7 +474,15 @@ async function main() {
     console.error(
       '[omniterm-browser] the running browser did not accept a new tab; starting a fresh one',
     );
-    await closeExistingBrowser(existing.pid);
+    // Must not fall through when the close failed: cold-starting a second Chrome
+    // against a user-data-dir the first one still holds is the exact hazard
+    // closeExistingBrowser's return value exists to prevent.
+    if (!(await closeExistingBrowser(existing.pid))) {
+      throw new Error(
+        `The running browser (pid ${existing.pid}) refused a new tab and could not be stopped; ` +
+          'not starting a second browser against the same user-data-dir.',
+      );
+    }
   }
 
   // Cold path: own the UDD, enable CDP, then register. The helper clears any
