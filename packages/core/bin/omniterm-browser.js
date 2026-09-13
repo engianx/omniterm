@@ -31,7 +31,13 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, unlinkSyn
 import { homedir, platform } from 'node:os';
 import path from 'node:path';
 
-const URL_ARG = process.argv[2] || 'about:blank';
+const ARGV = process.argv.slice(2);
+// `--close` (alias `--kill`) shuts the shim's browser down. Without it there is
+// no supported way to clear a stuck instance: the shim otherwise accepts only a
+// URL, so a browser that has gone bad can only be cleaned up by hand-killing the
+// pid recorded in SingletonLock.
+const CLOSE_REQUESTED = ARGV.some((a) => a === '--close' || a === '--kill');
+const URL_ARG = ARGV.find((a) => !a.startsWith('--')) || 'about:blank';
 const REGISTRY_URL = (process.env.OMNITERM_BROWSER_REGISTRY_URL || '').replace(/\/$/, '');
 const UDD =
   process.env.OMNITERM_BROWSER_UDD || path.join(homedir(), '.omniterm', 'browser-profile');
@@ -299,20 +305,137 @@ async function launchColdWithDisplayFallback(chromeBinary) {
   throw lastErr ?? new Error('Chrome could not be started');
 }
 
+/**
+ * Ask a running browser to open a tab, over CDP's HTTP endpoint.
+ *
+ * Works headed or headless, which is the whole point — Chrome's singleton IPC
+ * does not. Modern Chrome requires PUT on /json/new and answers GET with 405;
+ * older builds only accept GET, so try PUT first and fall back.
+ *
+ * Returns true only if the browser actually accepted the tab.
+ */
+async function openTabViaCdp(port, url) {
+  const endpoint = `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`;
+  for (const method of ['PUT', 'GET']) {
+    try {
+      const res = await fetch(endpoint, { method });
+      if (res.ok) return true;
+      // 405 means this Chrome wants the other verb; anything else is a real
+      // refusal and retrying with GET would just repeat it.
+      if (res.status !== 405) {
+        console.error(`[omniterm-browser] /json/new ${method} -> ${res.status} ${res.statusText}`);
+        return false;
+      }
+    } catch (err) {
+      console.error(`[omniterm-browser] /json/new ${method} failed: ${String(err)}`);
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Stop the browser this shim owns and clear the singleton markers it leaves.
+ *
+ * Kills the pid recorded in SingletonLock, NOT the pid registered earlier:
+ * Chrome re-execs on macOS and the registered pid is not the live browser, so
+ * killing that one leaks the real process (see AGENTS.md).
+ *
+ * Also deregisters any registry entry pointing at the port we just killed —
+ * otherwise the tab's panel keeps listing a browser whose CDP is dead, which is
+ * indistinguishable in the UI from a live one.
+ */
+async function closeExistingBrowser(ownerPid) {
+  let deadPort = null;
+  try {
+    deadPort = (await readDevToolsActivePort(1_000)).port;
+  } catch {}
+
+  if (Number.isFinite(ownerPid)) {
+    try {
+      process.kill(ownerPid, 'SIGTERM');
+    } catch {}
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(ownerPid, 0);
+      } catch {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort']) {
+    try {
+      unlinkSync(path.join(UDD, f));
+    } catch {}
+  }
+  if (deadPort) await deregisterPort(deadPort);
+}
+
+/** Remove registry entries whose CDP endpoint is the port we just shut down. */
+async function deregisterPort(port) {
+  if (!REGISTRY_URL) return;
+  const base = REGISTRY_URL.replace(/\/registry$/, '');
+  try {
+    const res = await fetch(`${base}/browsers`);
+    if (!res.ok) return;
+    const { browsers = [] } = await res.json();
+    for (const b of browsers) {
+      if (typeof b?.browserCdpUrl === 'string' && b.browserCdpUrl.includes(`:${port}/`)) {
+        await fetch(`${REGISTRY_URL}/browsers/${encodeURIComponent(b.id)}`, { method: 'DELETE' });
+        console.error(`[omniterm-browser] deregistered stale browser id=${b.id}`);
+      }
+    }
+  } catch {
+    // Best effort: a browser we cannot deregister is cosmetic, and failing the
+    // close over it would be worse than leaving the entry.
+  }
+}
+
 async function main() {
   mkdirSync(UDD, { recursive: true });
+
+  if (CLOSE_REQUESTED) {
+    const owner = readSingleton();
+    if (!owner) {
+      console.error('[omniterm-browser] no running browser to close');
+      return;
+    }
+    await closeExistingBrowser(owner.pid);
+    console.error(`[omniterm-browser] closed browser pid=${owner.pid}`);
+    return;
+  }
+
   const chromeBinary = findChromeBinary();
   const existing = readSingleton();
 
   if (existing) {
-    // Warm path: hand the URL off via Chrome's singleton IPC. The first
-    // process Chrome sees with this UDD owns the lock; subsequent launches
-    // (us, right now) just deliver the URL as a new tab in the existing
-    // instance. CDP stays on whatever the cold-start invocation enabled.
-    const warm = spawnChrome(chromeBinary, chromeArgs(false));
-    const { port, wsPath } = await Promise.race([readDevToolsActivePort(), warm.exited]);
-    await postRegistration(`ws://127.0.0.1:${port}${wsPath}`, existing.pid);
-    return;
+    // Warm path: ask the RUNNING browser to open the tab over CDP.
+    //
+    // This used to spawn a second Chrome and rely on Chrome's singleton IPC to
+    // deliver the URL into the existing instance. That only works for a headed
+    // Chrome. Headless Chrome does not service the singleton handoff at all, so
+    // on any display-less box — which is every Linux box, and the default since
+    // the headless fix — the second process delivered nothing, the shim read the
+    // existing DevToolsActivePort, and reported `registered` for a browser that
+    // never opened the page. Measured: a healthy headless instance sitting at one
+    // page stayed at one page across repeated calls, so $BROWSER worked exactly
+    // once per Chrome and every later call was a silent no-op.
+    //
+    // CDP is the same operation without the guesswork, and it behaves the same
+    // headed or headless. If it fails, fall through to a cold start rather than
+    // registering a browser we never actually reached.
+    const { port, wsPath } = await readDevToolsActivePort();
+    const opened = await openTabViaCdp(port, URL_ARG);
+    if (opened) {
+      await postRegistration(`ws://127.0.0.1:${port}${wsPath}`, existing.pid);
+      return;
+    }
+    console.error(
+      '[omniterm-browser] the running browser did not accept a new tab; starting a fresh one',
+    );
+    await closeExistingBrowser(existing.pid);
   }
 
   // Cold path: own the UDD, enable CDP, then register. The helper clears any
