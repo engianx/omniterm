@@ -162,6 +162,44 @@ export function createRefitScheduler(view) {
 }
 
 /**
+ * ScreencastView internals, resolved by property first and DOM second.
+ *
+ * Chrome 153 removed the `viewportElement`, `canvasElement` and `repaint`
+ * members from ScreencastView while keeping the things they pointed at: the
+ * `.screencast-viewport` and `.screencast-canvas-container > canvas` elements
+ * remain available. `performUpdate()` also renders viewport styles before
+ * painting, so its compact dimensions must survive that render.
+ *
+ * Prefer the property so a Chrome that still has it is untouched, and fall back
+ * to the structure. Both layers can fail independently, and either failing
+ * still degrades to stock rather than throwing.
+ *
+ * Resolve the DOM elements at use, never at install time. The shim installs
+ * as soon as ScreencastApp exposes screencastView and rootSplitWidget, and on
+ * Chrome 153 the view's own DOM (.screencast-viewport, the canvas) is not built
+ * yet at that moment — resolving once up front returns null and degrades a
+ * screencast that would have worked a moment later.
+ */
+function resolveViewportElement(view) {
+  return view?.viewportElement ?? view?.element?.querySelector('.screencast-viewport') ?? null;
+}
+
+function resolveCanvasElement(view) {
+  return (
+    view?.canvasElement ??
+    view?.element?.querySelector('.screencast-canvas-container canvas') ??
+    null
+  );
+}
+
+/** Returns a repaint callable, or null when neither spelling is available. */
+function resolveRepaint(view) {
+  if (typeof view?.repaint === 'function') return () => view.repaint();
+  if (typeof view?.performUpdate === 'function') return () => view.performUpdate();
+  return null;
+}
+
+/**
  * Fit the screencast to the pane by removing the frame stock DevTools draws
  * around the page, and keep it fitted as the pane changes size.
  *
@@ -181,14 +219,17 @@ export function installCompactScreencastFrame(view) {
   });
 
   try {
+    // The viewport element is resolved per frame below, not here: it does not
+    // exist yet at install time on Chrome 153.
+    const repaint = resolveRepaint(view);
+    const rendersViewport = typeof view?.repaint !== 'function';
     if (
       !view?.element ||
-      !view.viewportElement ||
       !view.imageElement ||
       typeof view.viewportDimensions !== 'function' ||
       typeof view.screencastFrame !== 'function' ||
       typeof view.onResize !== 'function' ||
-      typeof view.repaint !== 'function'
+      !repaint
     ) {
       return stock('ScreencastView frame APIs are unavailable');
     }
@@ -203,6 +244,10 @@ export function installCompactScreencastFrame(view) {
       if (reverted) return;
       reverted = true;
       document.getElementById(COMPACT_FRAME_STYLE_ID)?.remove();
+      if (rendersViewport) {
+        view.element.style.removeProperty('--omniterm-screencast-width');
+        view.element.style.removeProperty('--omniterm-screencast-height');
+      }
       view.viewportDimensions = stockViewportDimensions;
       view.screencastFrame = stockScreencastFrame;
       resizeObserver?.disconnect();
@@ -220,6 +265,10 @@ export function installCompactScreencastFrame(view) {
         border: 0 !important;
         border-radius: 0 !important;
         padding: 0 !important;
+        ${rendersViewport ? `
+        width: var(--omniterm-screencast-width) !important;
+        height: var(--omniterm-screencast-height) !important;
+        ` : ''}
       }
 
       .screencast-canvas-container {
@@ -284,6 +333,7 @@ export function installCompactScreencastFrame(view) {
 
       const wrapper = function (event) {
         if (typeof stockOnLoad === 'function') stockOnLoad.call(this, event);
+        if (reverted) return;
         // screenZoom is set by the handler above, so it can only be read here —
         // it is undefined until the first frame lands. If it ever stops being
         // readable the compact geometry cannot be computed, and the CSS above
@@ -294,9 +344,26 @@ export function installCompactScreencastFrame(view) {
           recordState('degraded', 'ScreencastView.screenZoom is unreadable; reverted to stock');
           return;
         }
-        view.viewportElement.style.width = `${metadata.deviceWidth * view.screenZoom}px`;
-        view.viewportElement.style.height = `${metadata.deviceHeight * view.screenZoom}px`;
-        view.repaint();
+        const viewportElement = resolveViewportElement(view);
+        if (!viewportElement) {
+          revert();
+          recordState('degraded', 'ScreencastView viewport element is unreachable; reverted to stock');
+          return;
+        }
+        const width = `${metadata.deviceWidth * view.screenZoom}px`;
+        const height = `${metadata.deviceHeight * view.screenZoom}px`;
+        if (rendersViewport) {
+          // Chrome 153's styleMap writes the stock border allowance back on
+          // every render, before measuring the canvas. Inherited variables and
+          // an important stylesheet rule preserve the actual compact size
+          // through both this paint and later stock requestUpdate() renders.
+          view.element.style.setProperty('--omniterm-screencast-width', width);
+          view.element.style.setProperty('--omniterm-screencast-height', height);
+        } else {
+          viewportElement.style.width = width;
+          viewportElement.style.height = height;
+        }
+        repaint();
       };
       wrapper[WRAPPED_STOCK_ON_LOAD] = stockOnLoad;
       view.imageElement.onload = wrapper;
@@ -481,14 +548,18 @@ export function installScreencastClipboard(view) {
     const canCut = canRead && typeof inputAgent?.invoke_dispatchKeyEvent === 'function';
     const installed = [canPaste && 'paste', canRead && 'copy', canCut && 'cut'].filter(Boolean);
 
-    if (!view?.canvasElement || installed.length === 0) {
+    if (installed.length === 0) {
       return stock('ScreencastView CDP agents are unavailable');
     }
 
     // The remote page is a canvas on this side, so it has no focusable element
     // of its own: that one canvas holds the frontend's focus for the whole
     // screencast, and DevTools refocuses it on every event it handles.
-    const ownsFocus = () => document.activeElement === view.canvasElement;
+    // Resolved per call: the canvas does not exist yet when this installs.
+    const ownsFocus = () => {
+      const canvasElement = resolveCanvasElement(view);
+      return Boolean(canvasElement) && document.activeElement === canvasElement;
+    };
 
     // `copy` must be answered synchronously, so the selection cannot be fetched
     // when the chord arrives — by the time a CDP round trip returned, the event
