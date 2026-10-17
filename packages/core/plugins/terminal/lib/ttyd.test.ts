@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getTtydPidsToKill, buildTtydArgs } from './ttyd.js';
+import { getTtydPidsToKill, buildTtydArgs, inOwnPidNamespace } from './ttyd.js';
 
 test('buildTtydArgs: renderer defaults to webgl and coerces invalid/missing values', () => {
   const renderOf = (s: { terminalRenderer?: string }) => {
@@ -50,4 +50,35 @@ test('getTtydPidsToKill removes all ttyd listeners whose tmux session is gone', 
   assert.deepEqual(new Set(pids), new Set([500, 600]));
   assert.equal(pids.includes(700), false);
   assert.equal(pids.includes(800), false);
+});
+
+test('inOwnPidNamespace spares ttyds in other PID namespaces (containers)', () => {
+  const links: Record<string, string> = {
+    '/proc/self/ns/pid': 'pid:[4026531836]',
+    '/proc/10/ns/pid': 'pid:[4026531836]',
+    '/proc/20/ns/pid': 'pid:[4026532999]', // a docker container's ttyd
+  };
+  const readlink = (p: string) => {
+    if (p in links) return links[p];
+    throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+  };
+  assert.equal(inOwnPidNamespace(10, readlink), true);
+  assert.equal(inOwnPidNamespace(20, readlink), false, 'another namespace is never ours');
+  assert.equal(inOwnPidNamespace(30, readlink), false, 'an unreadable pid is not ours to kill');
+});
+
+test('inOwnPidNamespace without /proc treats every pid as ours, but fails closed on other errors', () => {
+  const noProc = () => {
+    throw Object.assign(new Error('no /proc'), { code: 'ENOENT' });
+  };
+  assert.equal(inOwnPidNamespace(10, noProc), true, 'macOS: no namespaces to cross');
+  const denied = () => {
+    throw Object.assign(new Error('denied'), { code: 'EACCES' });
+  };
+  assert.equal(inOwnPidNamespace(10, denied), false);
+});
+
+test('inOwnPidNamespace reads the real namespace of this process', () => {
+  // Linux CI/dev boxes: our own pid must count as ours.
+  assert.equal(inOwnPidNamespace(process.pid), true);
 });

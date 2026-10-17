@@ -1,4 +1,5 @@
 import { spawn, ChildProcess, execFileSync } from 'child_process';
+import { readlinkSync } from 'fs';
 import * as net from 'net';
 import { loadSettings } from '../../../lib/settings.js';
 import { trackCleanup } from '../../../lib/telemetry.js';
@@ -178,6 +179,37 @@ export function getTtydPidsToKill(psOutput: string, liveSessions: Set<string>): 
   return pidsToKill.sort((a, b) => a - b);
 }
 
+/**
+ * Whether `pid` lives in this process's PID namespace.
+ *
+ * `ps -eo` on a Linux host also lists processes inside containers (their own
+ * PID namespaces), including another omniterm's ttyds. Their tmux sessions
+ * live in that container's tmux server, so `tmux list-sessions` here never
+ * shows them, and the orphan sweep would kill a container's live terminals —
+ * which any host-side boot does, even just importing the server for a test.
+ *
+ * Where /proc is unavailable (macOS) there are no PID namespaces to cross, so
+ * every pid counts as ours. If our own namespace can't be read, nothing does:
+ * better to leave an orphan than to kill another instance's terminal.
+ */
+export function inOwnPidNamespace(
+  pid: number,
+  readlink: (path: string) => string = readlinkSync,
+): boolean {
+  let own: string;
+  try {
+    own = readlink('/proc/self/ns/pid');
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+  }
+  try {
+    return readlink(`/proc/${pid}/ns/pid`) === own;
+  } catch {
+    // Gone, or not ours to inspect (another user) — either way, not ours to kill.
+    return false;
+  }
+}
+
 export function killOrphanedTtydProcesses(): void {
   // Get live tmux sessions
   let liveSessions: Set<string>;
@@ -199,7 +231,7 @@ export function killOrphanedTtydProcesses(): void {
     if (!output) return;
 
     let killed = 0;
-    for (const pid of getTtydPidsToKill(output, liveSessions)) {
+    for (const pid of getTtydPidsToKill(output, liveSessions).filter((p) => inOwnPidNamespace(p))) {
       try {
         process.kill(pid, 'SIGTERM');
         killed++;
