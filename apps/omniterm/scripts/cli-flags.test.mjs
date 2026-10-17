@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -112,4 +113,60 @@ test('OMNITERM_ENV_PASSTHROUGH reaches the server through the CLI and wins', { s
     const body = await (await fetch(`${base}/api/session-env`)).json();
     assert.deepEqual(body.passthrough, ['FROM_ENV']);
   });
+});
+
+/** POST with an explicit Origin (fetch forbids setting it); resolves the status. */
+function postWithOrigin(base, path, origin) {
+  const u = new URL(base);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: u.hostname, port: u.port, method: 'POST', path, headers: { Origin: origin } },
+      (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('the CLI translates repeated --allowed-origins into the server Origin allowlist', { skip }, async () => {
+  await withCli(
+    ['--allowed-origins', 'https://a.example', '--allowed-origins', 'https://b.example'],
+    {},
+    async (base) => {
+      // 403 = rejected by the Origin check; anything else got past it.
+      assert.notEqual(await postWithOrigin(base, '/api/nope', 'https://a.example'), 403);
+      assert.notEqual(await postWithOrigin(base, '/api/nope', 'https://b.example'), 403);
+      assert.equal(await postWithOrigin(base, '/api/nope', 'https://evil.example'), 403);
+    },
+  );
+});
+
+test('OMNITERM_ALLOWED_ORIGINS reaches the server through the CLI and wins', { skip }, async () => {
+  await withCli(
+    ['--allowed-origins', 'https://flag.example'],
+    { OMNITERM_ALLOWED_ORIGINS: 'https://env.example' },
+    async (base) => {
+      assert.notEqual(await postWithOrigin(base, '/api/nope', 'https://env.example'), 403);
+      assert.equal(await postWithOrigin(base, '/api/nope', 'https://flag.example'), 403);
+    },
+  );
+});
+
+test('the CLI forwards --allowed-roots so the folder picker can reach outside $HOME', { skip }, async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'omniterm-cli-root-'));
+  const browse = (base) => fetch(`${base}/api/browse?path=${encodeURIComponent(root)}`);
+  try {
+    await withCli([], {}, async (base) => assert.equal((await browse(base)).status, 403));
+    await withCli(['--allowed-roots', root], {}, async (base) => {
+      const res = await browse(base);
+      assert.equal(res.status, 200);
+      // Going up from the extra root leaves the allowlist, so no ".." is offered.
+      assert.equal((await res.json()).parent, null);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

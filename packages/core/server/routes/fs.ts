@@ -104,7 +104,11 @@ fsRouter.get('/browse', async (req, res) => {
       .sort();
     const isGitRepo =
       existsSync(path.join(resolved, '.git')) || existsSync(path.join(resolved, 'HEAD'));
-    res.json({ path: resolved, parent: path.dirname(resolved), dirs, isGitRepo });
+    // null when going up would leave the allowed roots, so the picker can
+    // hide ".." instead of offering a step that 403s.
+    const up = path.dirname(resolved);
+    const parent = up !== resolved && confinePath(up, allowedRoots()) ? up : null;
+    res.json({ path: resolved, parent, dirs, isGitRepo });
   } catch {
     res.status(403).json({ error: 'Cannot read directory' });
   }

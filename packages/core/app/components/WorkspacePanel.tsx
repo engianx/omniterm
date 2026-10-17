@@ -103,6 +103,7 @@ export default function WorkspacePanel({
   const [browsePath, setBrowsePath] = useState('/');
   const [browseDirs, setBrowseDirs] = useState<string[]>([]);
   const [browseIsRepo, setBrowseIsRepo] = useState(false);
+  const [browseParent, setBrowseParent] = useState<string | null>(null);
   const [dividerPercent, setDividerPercent] = useState(50);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -164,6 +165,7 @@ export default function WorkspacePanel({
       setBrowsePath(data.path);
       setBrowseDirs(data.dirs);
       setBrowseIsRepo(data.isGitRepo);
+      setBrowseParent(data.parent ?? null);
     }
   }, []);
 
@@ -505,12 +507,11 @@ export default function WorkspacePanel({
           <div className={styles.dialog}>
             <div className={styles.browsePath}>Clone to: {browsePath}/</div>
             <div className={styles.browseList}>
-              <div
-                className={styles.browseItem}
-                onClick={() => fetchBrowse(browsePath.replace(/\/[^/]+$/, '') || '/')}
-              >
-                ..
-              </div>
+              {browseParent && (
+                <div className={styles.browseItem} onClick={() => fetchBrowse(browseParent)}>
+                  ..
+                </div>
+              )}
               {browseDirs.map((d) => (
                 <div
                   key={d}
@@ -540,11 +541,8 @@ export default function WorkspacePanel({
           <div className={styles.dialog}>
             <div className={styles.browsePath}>{browsePath}</div>
             <div className={styles.browseList}>
-              {browsePath !== '/' && (
-                <div
-                  className={styles.browseItem}
-                  onClick={() => fetchBrowse(browsePath.replace(/\/[^/]+$/, '') || '/')}
-                >
+              {browseParent && (
+                <div className={styles.browseItem} onClick={() => fetchBrowse(browseParent)}>
                   ..
                 </div>
               )}

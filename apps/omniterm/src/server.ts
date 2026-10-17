@@ -8,6 +8,8 @@ import {
   validatePluginModule,
   PluginSpecError,
   EnvNameError,
+  OriginConfigError,
+  AllowedRootsError,
   type TabTypePlugin,
 } from '@omniterm/core';
 import { existsSync } from 'node:fs';
@@ -130,4 +132,13 @@ try {
 }
 
 const plugins = await loadPlugins(specs);
-await startServer({ port, devtoolsBundleDir, pdfjsDistDir, plugins, envPassthrough });
+// --allowed-origins / --allowed-roots are translated by the launcher into
+// OMNITERM_ALLOWED_ORIGINS / OMNITERM_ALLOWED_ROOTS, which startServer
+// validates; a malformed entry fails the boot here.
+try {
+  await startServer({ port, devtoolsBundleDir, pdfjsDistDir, plugins, envPassthrough });
+} catch (err) {
+  if (err instanceof OriginConfigError) fail(null, `--allowed-origins / OMNITERM_ALLOWED_ORIGINS: ${err.message}`);
+  if (err instanceof AllowedRootsError) fail(null, `--allowed-roots / OMNITERM_ALLOWED_ROOTS: ${err.message}`);
+  throw err;
+}
