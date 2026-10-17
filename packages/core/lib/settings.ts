@@ -34,6 +34,12 @@ export interface Settings {
   sidebarCollapsed: boolean;
   namingSchemes: Record<string, string>;
   terminalFontSize: number;
+  /**
+   * CSS font-family list for terminals (e.g. `'MesloLGS NF', monospace` for
+   * a Nerd Font's prompt icons). Fonts come from the viewing device, not the
+   * server. Empty → ttyd's default list.
+   */
+  terminalFontFamily: string;
   defaultShell: string;
   // path -> terminal tabs (each 1:1 with a tmux session). Persists tab order
   // and custom names; the live session set is the source of truth on restore.
@@ -107,6 +113,7 @@ const DEFAULT_SETTINGS: Settings = {
   sidebarCollapsed: false,
   namingSchemes: {},
   terminalFontSize: 14,
+  terminalFontFamily: '',
   defaultShell: 'bash',
   terminalTabs: {},
   activeSessionId: null,

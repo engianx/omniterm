@@ -402,6 +402,88 @@ export function installCompactScreencastFrame(view) {
   }
 }
 
+/**
+ * Render the remote page at exactly the size and density it is shown at.
+ *
+ * Stock DevTools casts the page at whatever size the remote window happens to
+ * be and scales each frame to fit the pane. A headless Chrome has no screen, so
+ * its window defaults to 800x600 and every frame is upscaled into a blur — and
+ * no fixed window size suits panes that range from a phone to a 4K monitor.
+ *
+ * Instead, emulate the pane: give the page the CSS size of the surface it is
+ * drawn into and the viewer's devicePixelRatio. Stock already requests frames
+ * capped at that surface times devicePixelRatio, so each frame then lands 1:1
+ * on the viewer's physical pixels and the page reflows to fit the pane rather
+ * than being shrunk or stretched.
+ *
+ * Stock consults viewportDimensions() before every cast and on every decoded
+ * frame, so wrapping it catches pane resizes (which restart casting) and a
+ * devicePixelRatio change (browser zoom, a window dragged to another monitor)
+ * alike; the override is only re-sent when the result changes. The override
+ * belongs to this frontend's CDP session, so Chrome drops it on its own when
+ * the panel disconnects.
+ */
+export function installViewportMatching(view) {
+  const stock = (detail) => ({ state: `viewport=stock (${detail})`, revert: () => {} });
+
+  try {
+    const target = typeof view?.inputModel?.target === 'function' ? view.inputModel.target() : null;
+    const emulationAgent =
+      typeof target?.emulationAgent === 'function' ? target.emulationAgent() : null;
+    if (
+      typeof emulationAgent?.invoke_setDeviceMetricsOverride !== 'function' ||
+      typeof view?.viewportDimensions !== 'function'
+    ) {
+      return stock('Emulation agent or viewportDimensions is unavailable');
+    }
+
+    const wrapped = view.viewportDimensions;
+    let applied = '';
+
+    const matched = function () {
+      const dimensions = wrapped.call(this);
+      // Negative or empty is the "no room, don't cast" signal; leave the page
+      // at its last size rather than emulating a hidden pane.
+      if (!(dimensions?.width > 0 && dimensions?.height > 0)) return dimensions;
+      const width = Math.round(dimensions.width);
+      const height = Math.round(dimensions.height);
+      const deviceScaleFactor = window.devicePixelRatio || 1;
+      const key = `${width}x${height}@${deviceScaleFactor}`;
+      if (key !== applied) {
+        applied = key;
+        // Sent ahead of the startScreencast that follows on the same session,
+        // so Chrome resizes the page before it captures the first frame.
+        void Promise.resolve(
+          emulationAgent.invoke_setDeviceMetricsOverride({
+            width,
+            height,
+            deviceScaleFactor,
+            mobile: false,
+          }),
+        ).catch(() => {
+          applied = '';
+        });
+      }
+      return dimensions;
+    };
+    view.viewportDimensions = matched;
+
+    return {
+      state: 'viewport=matched',
+      revert: () => {
+        // installCompactScreencastFrame's own revert reassigns stock's
+        // viewportDimensions, discarding this wrapper; restoring over that
+        // would bring the compact override back with it.
+        if (view.viewportDimensions === matched) view.viewportDimensions = wrapped;
+        if (applied) void Promise.resolve(emulationAgent.invoke_clearDeviceMetricsOverride?.()).catch(() => {});
+        applied = '';
+      },
+    };
+  } catch (error) {
+    return stock(String(error));
+  }
+}
+
 /** Cmd on macOS, Ctrl everywhere else. */
 function usesCommandKey() {
   const platform = globalThis.navigator?.platform || globalThis.navigator?.userAgent || '';
@@ -766,7 +848,7 @@ export function installScreencastClipboard(view) {
  * was baked into the iframe's React key, and a pane-resize drag had no way to
  * tell the shim to stop restarting the screencast mid-gesture.
  */
-function listenForParentMessages(split, frame, clipboard) {
+function listenForParentMessages(split, frame, viewport, clipboard) {
   window.addEventListener('message', (event) => {
     // Same-origin by construction — the frontend is served through OmniTerm's
     // own proxy — so anything else is not the host frame.
@@ -782,7 +864,7 @@ function listenForParentMessages(split, frame, clipboard) {
         frame.refit();
         recordState(
           data.inspectorPosition,
-          `${describeSplitState(split)}; ${frame.state}; ${clipboard.state}`,
+          `${describeSplitState(split)}; ${frame.state}; ${viewport.state}; ${clipboard.state}`,
         );
       } else {
         recordState('unsupported', applied.reason);
@@ -846,6 +928,8 @@ async function placeInspector() {
     // triggers a Widget resize, and the resize path must already be running
     // through the serialized refit scheduler when it does.
     const frame = installCompactScreencastFrame(app.screencastView);
+    // After the frame, so it wraps the compact surface rather than stock's.
+    const viewport = installViewportMatching(app.screencastView);
     const clipboard = installScreencastClipboard(app.screencastView);
 
     currentStage = `place inspector on ${requestedPosition}`;
@@ -858,15 +942,16 @@ async function placeInspector() {
       // back instead of leaving them armed. Same reasoning as the frame
       // handle's own degrade path.
       clipboard.revert();
+      viewport.revert();
       frame.revert();
       recordState('unsupported', applied.reason);
       return;
     }
 
-    listenForParentMessages(split, frame, clipboard);
+    listenForParentMessages(split, frame, viewport, clipboard);
     recordState(
       requestedPosition,
-      `${describeSplitState(split)}; ${frame.state}; ${clipboard.state}`,
+      `${describeSplitState(split)}; ${frame.state}; ${viewport.state}; ${clipboard.state}`,
     );
     return;
   }

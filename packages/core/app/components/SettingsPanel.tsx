@@ -61,6 +61,7 @@ function ModeRadioGroup<T extends string>({
 // set "dom"), so the panel must not echo it back lest a failed load clobber it.
 interface Settings {
   terminalFontSize: number;
+  terminalFontFamily: string;
   defaultShell: string;
   telemetryEnabled: boolean;
 }
@@ -110,6 +111,7 @@ export default function SettingsPanel({
 }: Props) {
   const [settings, setSettings] = useState<Settings>({
     terminalFontSize: 18,
+    terminalFontFamily: '',
     defaultShell: 'bash',
     telemetryEnabled: true,
   });
@@ -126,6 +128,7 @@ export default function SettingsPanel({
       .then((data) => {
         setSettings({
           terminalFontSize: data.terminalFontSize || 18,
+          terminalFontFamily: typeof data.terminalFontFamily === 'string' ? data.terminalFontFamily : '',
           defaultShell: data.defaultShell || 'bash',
           telemetryEnabled: data.telemetryEnabled !== false,
         });
@@ -237,6 +240,23 @@ export default function SettingsPanel({
               +
             </button>
           </div>
+        </div>
+        <div style={S.row}>
+          <label style={S.label} htmlFor="settings-terminal-font">
+            Terminal Font
+          </label>
+          <input
+            id="settings-terminal-font"
+            style={S.textInput}
+            value={settings.terminalFontFamily}
+            placeholder="Default"
+            spellCheck={false}
+            onChange={(e) => setSettings((s) => ({ ...s, terminalFontFamily: e.target.value }))}
+          />
+        </div>
+        <div style={{ ...S.hint, marginBottom: '8px' }}>
+          A font installed on this device, e.g. <code>'MesloLGS NF', monospace</code> — a Nerd
+          Font shows prompt icons.
         </div>
         <div style={S.row}>
           <label style={S.label}>Default Shell</label>
@@ -432,6 +452,16 @@ const S: Record<string, React.CSSProperties> = {
     color: 'var(--text-bright)',
     background: 'var(--accent)',
     borderColor: 'var(--accent)',
+  },
+  textInput: {
+    width: '180px',
+    height: '28px',
+    padding: '0 8px',
+    fontSize: '12px',
+    color: 'var(--text-bright)',
+    border: '1px solid var(--border)',
+    borderRadius: '4px',
+    background: 'var(--bg)',
   },
   hint: {
     fontSize: '11px',

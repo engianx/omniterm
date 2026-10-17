@@ -86,6 +86,18 @@ const TerminalView = forwardRef<HTMLIFrameElement, Props>(function TerminalView(
       const iframeDoc = iframe.contentDocument;
       if (!iframeDoc) return;
 
+      // Hide xterm.js's native viewport scrollbar. tmux owns the scrollback
+      // (wheel enters copy-mode), so xterm's own buffer never scrolls and the
+      // bar is a dead, light-themed strip down the right edge.
+      if (!iframeDoc.getElementById('omniterm-terminal-style')) {
+        const style = iframeDoc.createElement('style');
+        style.id = 'omniterm-terminal-style';
+        style.textContent =
+          '.xterm .xterm-viewport{scrollbar-width:none}' +
+          '.xterm .xterm-viewport::-webkit-scrollbar{display:none}';
+        iframeDoc.head.appendChild(style);
+      }
+
       if (!(iframeDoc as any).__omniterm_contextmenu) {
         (iframeDoc as any).__omniterm_contextmenu = true;
         iframeDoc.addEventListener('contextmenu', (e: MouseEvent) => {

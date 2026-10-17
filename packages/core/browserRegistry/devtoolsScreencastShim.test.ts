@@ -235,6 +235,37 @@ class FakeClipboardView {
   }
 }
 
+/**
+ * Enough of ScreencastView for viewport matching: the surface size stock asks
+ * for before every cast and frame, and the page target's Emulation agent.
+ */
+class FakeViewportView {
+  surface = { width: 900, height: 571 };
+  /** Every Emulation call the shim made, in order. */
+  emulation: Array<{ method: string; params?: Record<string, unknown> }> = [];
+  emulationAgent: Record<string, unknown> | null = {
+    invoke_setDeviceMetricsOverride: (params: Record<string, unknown>) => {
+      this.emulation.push({ method: 'setDeviceMetricsOverride', params });
+      return Promise.resolve({});
+    },
+    invoke_clearDeviceMetricsOverride: () => {
+      this.emulation.push({ method: 'clearDeviceMetricsOverride' });
+      return Promise.resolve({});
+    },
+  };
+  inputModel = {
+    target: () => ({ emulationAgent: () => this.emulationAgent }),
+  };
+  viewportDimensions() {
+    return { ...this.surface };
+  }
+}
+
+function setDevicePixelRatio(ratio: number) {
+  (globalThis as unknown as { window: { devicePixelRatio: number } }).window.devicePixelRatio =
+    ratio;
+}
+
 /** A KeyboardEvent/ClipboardEvent shaped like the ones the shim inspects. */
 function fakeEvent<T extends Record<string, unknown>>(props: T) {
   const record = { stopPropagation: 0, preventDefault: 0 };
@@ -308,6 +339,7 @@ async function loadShim(): Promise<{
   createRefitScheduler: (view: FakeScreencastView) => Scheduler;
   installCompactScreencastFrame: (view: FakeFrameView) => FrameHandle;
   installScreencastClipboard: (view: FakeClipboardView) => ClipboardHandle;
+  installViewportMatching: (view: FakeViewportView) => ClipboardHandle;
   classifyClipboardChord: (event: Record<string, unknown>) => string | null;
   applyInspectorPosition: (
     split: SplitLike,
@@ -935,4 +967,100 @@ test('an unclaimed chord keeps both of its edges', async () => {
 
   assert.equal(down.record.stopPropagation, 0);
   assert.equal(up.record.stopPropagation, 0, 'the page gets the whole keystroke');
+});
+
+test('the page is emulated at the surface size and the viewer density', async () => {
+  const { installViewportMatching } = await loadShim();
+  setDevicePixelRatio(2);
+  const view = new FakeViewportView();
+  assert.equal(installViewportMatching(view).state, 'viewport=matched');
+
+  // Stock's startCasting() reads the surface, then asks for frames capped at
+  // surface * devicePixelRatio — which is exactly the page this emulates.
+  assert.deepEqual(view.viewportDimensions(), { width: 900, height: 571 });
+  assert.deepEqual(view.emulation, [
+    {
+      method: 'setDeviceMetricsOverride',
+      params: { width: 900, height: 571, deviceScaleFactor: 2, mobile: false },
+    },
+  ]);
+});
+
+test('the override is re-sent only when the surface or density changes', async () => {
+  const { installViewportMatching } = await loadShim();
+  setDevicePixelRatio(1);
+  const view = new FakeViewportView();
+  installViewportMatching(view);
+
+  // Stock reads viewportDimensions() on every decoded frame, so most calls
+  // must be free.
+  for (let i = 0; i < 20; i++) view.viewportDimensions();
+  view.surface = { width: 640, height: 400 };
+  view.viewportDimensions();
+  view.viewportDimensions();
+  setDevicePixelRatio(1.5); // browser zoom, or a window moved to another monitor
+  view.viewportDimensions();
+
+  assert.deepEqual(
+    view.emulation.map((call) => call.params),
+    [
+      { width: 900, height: 571, deviceScaleFactor: 1, mobile: false },
+      { width: 640, height: 400, deviceScaleFactor: 1, mobile: false },
+      { width: 640, height: 400, deviceScaleFactor: 1.5, mobile: false },
+    ],
+  );
+});
+
+test('a hidden pane leaves the page at its last emulated size', async () => {
+  const { installViewportMatching } = await loadShim();
+  setDevicePixelRatio(1);
+  const view = new FakeViewportView();
+  installViewportMatching(view);
+  view.viewportDimensions();
+
+  view.surface = { width: -1, height: -1 };
+  assert.deepEqual(
+    view.viewportDimensions(),
+    { width: -1, height: -1 },
+    'stock still sees the no-room signal that makes startCasting() bail out',
+  );
+  assert.equal(view.emulation.length, 1, 'no 0x0 or negative override');
+});
+
+test('revert clears the override and restores the wrapped surface', async () => {
+  const { installViewportMatching } = await loadShim();
+  setDevicePixelRatio(1);
+  const view = new FakeViewportView();
+  const wrapped = view.viewportDimensions;
+  const handle = installViewportMatching(view);
+  view.viewportDimensions();
+
+  handle.revert();
+
+  assert.equal(view.viewportDimensions, wrapped);
+  assert.deepEqual(view.emulation.at(-1), { method: 'clearDeviceMetricsOverride' });
+});
+
+test('revert does not resurrect a surface another override already put back', async () => {
+  const { installViewportMatching } = await loadShim();
+  const view = new FakeViewportView();
+  const handle = installViewportMatching(view);
+
+  // installCompactScreencastFrame's degrade path reassigns stock's function,
+  // dropping this wrapper along with the compact surface it wrapped.
+  const stockAgain = () => ({ width: 1, height: 1 });
+  view.viewportDimensions = stockAgain;
+  handle.revert();
+
+  assert.equal(view.viewportDimensions, stockAgain);
+});
+
+test('a Chrome without the Emulation agent keeps stock sizing', async () => {
+  const { installViewportMatching } = await loadShim();
+  const view = new FakeViewportView();
+  view.emulationAgent = null;
+  const wrapped = view.viewportDimensions;
+
+  assert.match(installViewportMatching(view).state, /^viewport=stock/);
+  assert.equal(view.viewportDimensions, wrapped);
 });

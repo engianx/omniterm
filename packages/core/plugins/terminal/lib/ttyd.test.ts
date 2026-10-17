@@ -24,6 +24,18 @@ test('buildTtydArgs: wires fontSize, session bind path, and port', () => {
   assert.ok(buildTtydArgs('s', 7700, {}).includes('fontSize=18'));
 });
 
+test('buildTtydArgs: passes a chosen font family and keeps ttyd\'s default otherwise', () => {
+  const args = buildTtydArgs('s', 7700, { terminalFontFamily: "  'MesloLGS NF', monospace " });
+  const i = args.indexOf(`fontFamily="'MesloLGS NF', monospace"`);
+  assert.ok(i > 0 && args[i - 1] === '-t');
+  for (const terminalFontFamily of [undefined, '', '   ']) {
+    assert.equal(
+      buildTtydArgs('s', 7700, { terminalFontFamily }).some((a) => a.startsWith('fontFamily=')),
+      false,
+    );
+  }
+});
+
 test('getTtydPidsToKill preserves duplicate ttyd listeners for live tmux sessions', () => {
   const psOutput = [
     '  100 ttyd --writable -i 127.0.0.1 -b /t/live-session/ -p 7700 -- bash',
@@ -50,4 +62,9 @@ test('getTtydPidsToKill removes all ttyd listeners whose tmux session is gone', 
   assert.deepEqual(new Set(pids), new Set([500, 600]));
   assert.equal(pids.includes(700), false);
   assert.equal(pids.includes(800), false);
+});
+
+test('buildTtydArgs: attaches tmux in forced UTF-8 mode so non-ASCII survives a C locale', () => {
+  const args = buildTtydArgs('sess', 7700, {});
+  assert.equal(args.at(-1), 'exec tmux -u attach-session -t sess');
 });

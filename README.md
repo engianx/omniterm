@@ -85,6 +85,7 @@ Run `omniterm --help` to see every command-line option.
 - Arrange panes side by side or top to bottom.
 - Reorder and rename tabs.
 - Scroll through terminal output and select text normally.
+- Choose the terminal font, for example a Nerd Font for prompt icons.
 - Find and use `tmux` sessions that were started outside omniterm.
 
 ### Workspaces
