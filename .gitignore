@@ -48,3 +48,6 @@ skills-lock.json
 
 # Shiplight skill-refresh cache (local only, never committed)
 .shiplight-agent-skills-last-update
+
+# Local Docker Compose overrides (machine-specific mounts and settings)
+docker-compose.override.yml

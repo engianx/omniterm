@@ -1,0 +1,96 @@
+x-omniterm-env: &omniterm-env
+  OMNITERM_TELEMETRY: "0"
+  # The browser's clock. Match where you (and your IP) are: a UTC browser
+  # on a US address is a common bot signal. Set TZ in your shell or `.env`.
+  TZ: "${TZ:-UTC}"
+  # Remote browser window size and pixel density used before the panel
+  # attaches. While the panel is open it resizes the page to match itself
+  # (size and devicePixelRatio), so these are only the starting point.
+  OMNITERM_BROWSER_WINDOW_SIZE: "1440,900"
+  OMNITERM_BROWSER_SCALE: "2"
+
+# Machine-specific mounts and settings (your own folders, a timezone, extra
+# --allowed-roots) belong in docker-compose.override.yml, which compose loads
+# automatically and git ignores. For example, to work on host folders at the
+# same paths inside the container:
+#
+#   services:
+#     omniterm:
+#       environment:
+#         OMNITERM_ALLOWED_ROOTS: /home
+#       volumes:
+#         - type: bind
+#           source: /home/you
+#           target: /home/you
+
+services:
+  omniterm:
+    # `workstation` = the minimal `base` stage plus zsh/Oh My Zsh, ssh and vim.
+    # Use `target: base` for just what omniterm needs to run.
+    build:
+      context: .
+      target: workstation
+    image: omniterm:local
+    container_name: omniterm
+    # omniterm has no auth of its own — bind to loopback only. Change to
+    # "17717:17717" to expose on the LAN (trusted networks only).
+    ports:
+      - "127.0.0.1:17717:17717"
+    environment: *omniterm-env
+    volumes:
+      # The whole home persists: dotfiles, shell history, Oh My Zsh, ssh keys.
+      # Docker seeds it from the image the first time only, so later image
+      # changes under /home/node don't reach an existing volume.
+      - omniterm-home:/home/node
+      - omniterm-settings:/home/node/.omniterm
+      - ./:/home/node/work/omniterm
+    shm_size: 1gb
+    init: true
+    restart: unless-stopped
+
+  # omniterm itself, run from this checkout with hot reload:
+  #   docker compose --profile dev up omniterm-dev   →   http://localhost:5173
+  # vite serves the UI with HMR; `tsx watch` restarts the server when server
+  # code changes (terminals survive — tmux owns them). Uses the host's
+  # node_modules through the bind mount, so run `corepack pnpm install` on the
+  # host first. Separate settings volume, so it never touches the main
+  # instance's workspaces and tabs.
+  omniterm-dev:
+    profiles: [dev]
+    image: omniterm:local
+    container_name: omniterm-dev
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      <<: *omniterm-env
+      OMNITERM_PORT: "17717"
+      OMNITERM_DEV_HOST: "0.0.0.0"
+      NODE_ENV: development
+    volumes:
+      - omniterm-dev-home:/home/node
+      - omniterm-dev-settings:/home/node/.omniterm
+      - ./:/home/node/work/omniterm
+    working_dir: /home/node/work/omniterm
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ ! -f node_modules/vite/bin/vite.js ] || [ ! -f node_modules/tsx/dist/cli.mjs ]; then
+          echo "omniterm-dev: no node_modules; run 'corepack pnpm install' in $$PWD on the host" >&2
+          exit 1
+        fi
+        # The server refuses to boot without a built client bundle, even
+        # though vite serves the UI in dev.
+        [ -f packages/core/dist/client/index.html ] ||
+          node node_modules/vite/bin/vite.js build --config packages/core/vite.config.ts
+        node node_modules/tsx/dist/cli.mjs watch apps/omniterm/src/server.ts &
+        exec node node_modules/vite/bin/vite.js --config packages/core/vite.config.ts
+    shm_size: 1gb
+    init: true
+
+volumes:
+  omniterm-home:
+  omniterm-settings:
+  omniterm-dev-home:
+  omniterm-dev-settings:

@@ -60,6 +60,27 @@ the command after it, since the package ships more than one binary:
 npx -p @omniterm/host omniterm
 ```
 
+### Run with Docker
+
+The repository includes a Docker Compose setup with `tmux`, `ttyd`, and Chrome
+on a virtual display, so the remote browser works without a desktop:
+
+```bash
+docker compose up -d
+```
+
+Then open <http://localhost:17717>. The port is bound to `127.0.0.1` only.
+
+- The default `workstation` image adds zsh with Oh My Zsh, an SSH client, vim,
+  and curl. Build `--target base` for only what omniterm needs.
+- The container's home directory is kept in a volume, so dotfiles and shell
+  history survive a rebuild. This repository is mounted at `~/work/omniterm`.
+- To work on folders from the host, add bind mounts in a
+  `docker-compose.override.yml` file. The example at the top of
+  `docker-compose.yml` shows how.
+- `docker compose --profile dev up omniterm-dev` runs omniterm from this
+  checkout with hot reload at <http://localhost:5173>.
+
 ### Change the ports
 
 Use a different web server port:

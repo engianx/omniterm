@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/standalone
+**/*.tsbuildinfo
+.git
+.pnpm-store
+coverage
+test-results
+agent-test-reports
+.claude
+.codex
