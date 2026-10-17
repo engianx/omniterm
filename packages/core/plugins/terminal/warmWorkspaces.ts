@@ -35,7 +35,60 @@ export interface WarmSnapshot {
   /** Terminal tabs only — other plugins' tabs are not warmed here. Each
    *  terminal tab is 1:1 with a tmux session (tab.id === sessionId). */
   tabs: Tab[];
+  /** The workspace's whole tab strip (terminals plus browser pages, files,
+   *  plugin tabs) in order, so a warm restore brings the strip back as it
+   *  was. Optional: absent on snapshots that only know their terminals. */
+  allTabs?: Tab[];
   activeTabId: string | null;
+}
+
+/**
+ * The tab list a warm restore hands the host: the snapshot's whole strip,
+ * minus terminal tabs whose session died while parked, plus any live terminal
+ * the strip somehow lacks (appended). Non-terminal tabs are restored as-is;
+ * their integrations re-add or remove them against live state afterwards,
+ * which is safe because the host's openTab is idempotent on id.
+ */
+export function restoreTabsFromSnapshot(snap: WarmSnapshot): Tab[] {
+  if (!snap.allTabs) return snap.tabs;
+  const terminalIds = new Set(snap.tabs.map((t) => t.id));
+  const out = snap.allTabs.filter((t) => t.type !== 'terminal' || terminalIds.has(t.id));
+  const present = new Set(out.map((t) => t.id));
+  for (const t of snap.tabs) if (!present.has(t.id)) out.push(t);
+  return out;
+}
+
+/**
+ * Merge a cold restore's result into whatever the host's tab list holds by
+ * the time the fetch resolves.
+ *
+ * With saved terminal tabs and no terminal tab in the list yet, the saved
+ * order and names win (plus any live session not in them, appended); other
+ * integrations' tabs that were re-added meanwhile (file tabs, say) are kept
+ * after the terminals rather than forcing the merge path, which would drop
+ * the saved names. Otherwise: add tabs for live sessions not shown yet, and
+ * drop terminal tabs whose session is gone. Non-terminal tabs pass through.
+ */
+export function mergeRestoredTabs(args: {
+  prevTabs: ReadonlyArray<Tab>;
+  savedTabs: ReadonlyArray<Tab> | null;
+  liveSessionIds: ReadonlyArray<string>;
+}): Tab[] {
+  const { prevTabs, savedTabs, liveSessionIds } = args;
+  const live = new Set(liveSessionIds);
+  const defaultTab = (id: string): Tab => ({ type: 'terminal', id, name: `Term ${id.slice(-4)}` });
+  const hasTerminal = prevTabs.some((t) => t.type === 'terminal');
+
+  if (savedTabs && !hasTerminal) {
+    const savedIds = new Set(savedTabs.map((t) => t.id));
+    const extras = liveSessionIds.filter((id) => !savedIds.has(id)).map(defaultTab);
+    const others = prevTabs.filter((t) => t.type !== 'terminal');
+    return [...savedTabs, ...extras, ...others];
+  }
+
+  const existing = new Set(prevTabs.filter((t) => t.type === 'terminal').map((t) => t.id));
+  const additions = liveSessionIds.filter((id) => !existing.has(id)).map(defaultTab);
+  return [...prevTabs, ...additions].filter((t) => t.type !== 'terminal' || live.has(t.id));
 }
 
 /**
@@ -72,11 +125,18 @@ export function pruneSessionsFromByPath(
     const liveIds = new Set(Object.keys(newSessions));
     const newTabs = survivingTerminalTabs(snap.tabs, liveIds);
     if (newTabs.length === 0) continue; // last terminal gone → drop the workspace
+    const allTabs = snap.allTabs ? survivingTerminalTabs(snap.allTabs, liveIds) : undefined;
+    const strip = allTabs ?? newTabs;
     const activeTabId =
-      snap.activeTabId && newTabs.some((t) => t.id === snap.activeTabId)
+      snap.activeTabId && strip.some((t) => t.id === snap.activeTabId)
         ? snap.activeTabId
         : newTabs[0].id;
-    next[path] = { sessions: newSessions, tabs: newTabs, activeTabId };
+    next[path] = {
+      sessions: newSessions,
+      tabs: newTabs,
+      ...(allTabs ? { allTabs } : {}),
+      activeTabId,
+    };
   }
   return changed ? next : byPath;
 }

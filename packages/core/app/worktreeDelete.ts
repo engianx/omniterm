@@ -7,11 +7,11 @@
  * called out. A clean worktree goes through git's normal (non-force) remove,
  * keeping that safeguard as a backstop against silent data loss.
  */
-export function worktreeDeleteUrl(wtId: string, dirty: boolean): string {
-  return `/api/worktrees/${encodeURIComponent(wtId)}${dirty ? '?force=true' : ''}`;
+export function worktreeDeleteUrl(wtPath: string, dirty: boolean): string {
+  return `/api/workspaces/worktrees?path=${encodeURIComponent(wtPath)}${dirty ? '&force=true' : ''}`;
 }
 
-/** Dirtiness-probe endpoint for a worktree; encodes the id like the delete URL. */
+/** Dirtiness-probe endpoint for a worktree, by its id (the workspace entry's `id`). */
 export function worktreeStatusUrl(wtId: string): string {
   return `/api/worktrees/${encodeURIComponent(wtId)}/status`;
 }

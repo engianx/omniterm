@@ -1,15 +1,15 @@
 import { Router } from 'express';
 import { readdir, stat, readFile } from 'fs/promises';
 import nodePath from 'path';
-import { listWorktrees, removeWorktree, renameBranch, isWorktreeDirty } from '../../lib/worktrees.js';
+import { listWorktrees, renameBranch, isWorktreeDirty } from '../../lib/worktrees.js';
 import { listRepos } from '../../lib/repos.js';
+import { removeWorktreeAndSessions } from '../../lib/workspaces.js';
 import { registryUrlForRequest } from '../../browserRegistry/tabRegistry.js';
 import {
   createSession,
   deleteSession,
   ensureSessionTtydReady,
   listSessions,
-  deleteSessionsForWorktree,
 } from '../../plugins/terminal/lib/sessions.js';
 import { getTmuxPaneTitle } from '../../plugins/terminal/lib/tmux.js';
 import { resolveWorktreePath } from '../../lib/paths.js';
@@ -32,34 +32,14 @@ worktreesRouter.delete('/worktrees/:wtId', (req, res) => {
   for (const repo of listRepos()) {
     const wt = listWorktrees(repo.path, repo.id).find((w) => w.id === wtId);
     if (wt) {
-      // Refuse up front when the worktree has uncommitted work and the caller
-      // hasn't confirmed a force delete, surfacing requiresForce so the UI can
-      // confirm before discarding work. The main worktree can't be removed even
-      // with --force, so never advertise force for it. Checking here rather than
-      // catching git's refusal avoids a second `git status` spawn on the error
-      // path and makes the requiresForce contract explicit.
-      if (!force && !wt.isMain && isWorktreeDirty(wt.path)) {
-        res.status(409).json({ error: 'Worktree has uncommitted changes', requiresForce: true });
-        return;
+      const removal = removeWorktreeAndSessions(repo.path, wt, force);
+      if (removal.ok) {
+        res.json({ deleted: true, sessionsKilled: removal.sessionsKilled });
+      } else {
+        res
+          .status(removal.status)
+          .json({ error: removal.error, requiresForce: removal.requiresForce });
       }
-      try {
-        removeWorktree(repo.path, wt.path, { force });
-      } catch (e: unknown) {
-        // Unforceable for some reason forcing can't fix (the main worktree, a
-        // locked worktree, submodules) — forcing won't help, so requiresForce
-        // stays false and the UI won't prompt for a doomed retry.
-        res.status(409).json({
-          error: e instanceof Error ? e.message : String(e),
-          requiresForce: false,
-        });
-        return;
-      }
-      // Tear sessions down only after a successful remove: when the worktree
-      // survives (dirty/unforceable) we keep its sessions alive. This differs
-      // from removeRepo, which frees sessions for every worktree because the
-      // whole repo is being untracked.
-      const sessionsKilled = deleteSessionsForWorktree(wtId);
-      res.json({ deleted: true, sessionsKilled });
       return;
     }
   }

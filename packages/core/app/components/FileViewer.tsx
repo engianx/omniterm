@@ -7,6 +7,7 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { loadLangExtension } from './langExtensions';
+import { PreviewIcon } from './icons';
 
 interface Props {
   filePath: string;
@@ -23,7 +24,9 @@ interface Props {
   onDirty: (dirty: boolean) => void;
   onSave: (content: string) => Promise<void> | void;
   onContentChange?: (content: string) => void;
-  onBack?: () => void;
+  /** Present for previewable files (markdown/HTML): opens the rendered
+   *  preview as its own tab beside this one. */
+  onOpenPreview?: () => void;
 }
 
 export default function FileViewer({
@@ -35,7 +38,7 @@ export default function FileViewer({
   onDirty,
   onSave,
   onContentChange,
-  onBack,
+  onOpenPreview,
 }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -156,6 +159,16 @@ export default function FileViewer({
       <TopBar
         right={
           <>
+            {onOpenPreview && (
+              <button
+                style={topBarActionStyle}
+                onClick={onOpenPreview}
+                title="Open preview"
+                aria-label="Open preview"
+              >
+                <PreviewIcon size={16} />
+              </button>
+            )}
             <button
               style={{
                 ...topBarActionStyle,
@@ -181,22 +194,6 @@ export default function FileViewer({
                 <polyline points="7 3 7 8 15 8" />
               </svg>
             </button>
-            {onBack && (
-              <button style={topBarActionStyle} onClick={onBack} title="Back to file tree">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            )}
           </>
         }
       >

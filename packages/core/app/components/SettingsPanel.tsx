@@ -4,12 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { track, setClientTelemetryEnabled } from '../telemetryClient';
 import TopBar, { topBarActionStyle } from './TopBar';
 import { ResizeHandle, type DragInfo } from './ResizeHandle';
-import type {
-  WorkspacesPanelMode,
-  FilesPanelMode,
-  BrowserPanelMode,
-  BrowserInspectorPosition,
-} from '../../lib/settings';
+import type { WorkspacesPanelMode, BrowserInspectorPosition } from '../../lib/settings';
 
 // Lower bound for the resizable overlay width. The body lays out as
 // label/control rows, so anything narrower than this starts to crowd.
@@ -76,18 +71,13 @@ interface Props {
   onResizeStart?: () => void;
   onResizeEnd?: () => void;
   /**
-   * Workspaces-panel display mode. Controlled by host state so the panel
+   * Left-sidebar display mode. Controlled by host state so the panel
    * applies live without waiting for Save (the other settings here only
    * take effect on new terminals, so they keep the Save flow).
    */
   workspacesPanelMode: WorkspacesPanelMode;
   onWorkspacesPanelModeChange: (mode: WorkspacesPanelMode) => void;
-  /** Files-panel display mode. Same live-apply pattern as workspaces. */
-  filesPanelMode: FilesPanelMode;
-  onFilesPanelModeChange: (mode: FilesPanelMode) => void;
-  /** Browser-view display and inspector placement. Both apply live. */
-  browserPanelMode: BrowserPanelMode;
-  onBrowserPanelModeChange: (mode: BrowserPanelMode) => void;
+  /** Browser DevTools inspector placement. Applies live. */
   browserInspectorPosition: BrowserInspectorPosition;
   onBrowserInspectorPositionChange: (position: BrowserInspectorPosition) => void;
 }
@@ -101,10 +91,6 @@ export default function SettingsPanel({
   onResizeEnd,
   workspacesPanelMode,
   onWorkspacesPanelModeChange,
-  filesPanelMode,
-  onFilesPanelModeChange,
-  browserPanelMode,
-  onBrowserPanelModeChange,
   browserInspectorPosition,
   onBrowserInspectorPositionChange,
 }: Props) {
@@ -261,45 +247,22 @@ export default function SettingsPanel({
 
         <div style={S.sectionDivider} />
 
-        <div style={S.sectionHeader}>Workspaces Panel</div>
+        <div style={S.sectionHeader}>Sidebar</div>
         <ModeRadioGroup
           label="Display Mode"
-          ariaLabel="Workspaces panel display mode"
+          ariaLabel="Sidebar display mode"
           options={PANEL_MODES}
           value={workspacesPanelMode}
           onChange={onWorkspacesPanelModeChange}
         />
         <div style={S.hint}>
-          Docked pins the panel as a permanent left sidebar. Overlay floats it over the terminal.
-          Narrow viewports always use overlay regardless of this setting.
+          Docked pins the sidebar (workspaces and files) to the left. Overlay floats it over the
+          tabs. Narrow viewports always use overlay regardless of this setting.
         </div>
 
         <div style={S.sectionDivider} />
 
-        <div style={S.sectionHeader}>Files Panel</div>
-        <ModeRadioGroup
-          label="Display Mode"
-          ariaLabel="Files panel display mode"
-          options={PANEL_MODES}
-          value={filesPanelMode}
-          onChange={onFilesPanelModeChange}
-        />
-        <div style={S.hint}>
-          Docked pins the panel as a permanent right sidebar (auto-narrows to the file tree when
-          no files are open). Overlay floats it over the terminal. Narrow viewports always use
-          overlay.
-        </div>
-
-        <div style={S.sectionDivider} />
-
-        <div style={S.sectionHeader}>Browser View</div>
-        <ModeRadioGroup
-          label="Display Mode"
-          ariaLabel="Browser view display mode"
-          options={PANEL_MODES}
-          value={browserPanelMode}
-          onChange={onBrowserPanelModeChange}
-        />
+        <div style={S.sectionHeader}>Browser</div>
         <ModeRadioGroup
           label="Inspector"
           ariaLabel="Browser inspector placement"
@@ -308,9 +271,8 @@ export default function SettingsPanel({
           onChange={onBrowserInspectorPositionChange}
         />
         <div style={S.hint}>
-          Docked shares space with the terminal; overlay floats above it. The inspector can be
-          hidden or placed to the right or below the page. Narrow viewports always use the
-          full-screen browser view.
+          Where Chrome DevTools sits in a browser tab: hidden, to the right of the page, or below
+          it.
         </div>
 
         <div style={S.sectionDivider} />

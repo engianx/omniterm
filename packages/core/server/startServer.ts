@@ -26,9 +26,11 @@ import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 import { reposRouter } from './routes/repos.js';
+import { workspacesRouter } from './routes/workspaces.js';
 import { worktreesRouter } from './routes/worktrees.js';
 import { settingsRouter } from './routes/settings.js';
 import { fsRouter } from './routes/fs.js';
+import { gitRouter } from './routes/git.js';
 import { previewRouter } from './routes/preview.js';
 import { createManifestRouter, validatePluginManifests } from './routes/manifest.js';
 
@@ -46,7 +48,7 @@ import {
 } from '../lib/telemetry.js';
 import { addClient, broadcast } from '../lib/events.js';
 import { confinePath } from '../lib/paths.js';
-import { allowedRoots } from '../lib/allowedRoots.js';
+import { allowedRoots, parseAllowedRoots, setExtraAllowedRoots } from '../lib/allowedRoots.js';
 import { listRepos } from '../lib/repos.js';
 import { listWorktrees } from '../lib/worktrees.js';
 import { parseEnvPassthrough, setEnvPassthrough } from '../lib/sessionEnv.js';
@@ -54,6 +56,13 @@ import { sessionsRouter } from '../plugins/terminal/routes/sessions.js';
 import { createTerminalPlugin } from '../plugins/terminal/plugin.js';
 import type { TabTypePlugin, HostContext } from '../plugins/types.js';
 import type { Session } from '../plugins/terminal/lib/sessions.js';
+import {
+  createRejectionLogger,
+  originCheckMiddleware,
+  parseAllowedOrigins,
+  rejectUpgradeIfOriginNotAllowed,
+  type OriginGuardOptions,
+} from './originCheck.js';
 
 export interface StartServerOptions {
   /** TCP port to bind. Default: 17717. Env: OMNITERM_PORT (overrides). */
@@ -68,6 +77,24 @@ export interface StartServerOptions {
    * overrides).
    */
   envPassthrough?: string[];
+  /**
+   * Extra browser origins allowed to make state-changing requests and open
+   * WebSockets (full origins, e.g. `https://omniterm.example.com`; `null`;
+   * `*` disables the Origin check — unsafe). Same-host requests and
+   * `X-Forwarded-Host` matches are always allowed; requests without an
+   * `Origin` header (non-browser clients) always pass. A malformed entry makes
+   * startServer throw OriginConfigError. Env: OMNITERM_ALLOWED_ORIGINS
+   * (comma-separated, overrides).
+   */
+  allowedOrigins?: string[];
+  /**
+   * Extra absolute directories the file, preview and git routes (and the
+   * workspace folder picker) may reach, on top of $HOME and the tracked
+   * workspaces — e.g. `/home` to browse other users' homes or a bind mount.
+   * A relative entry makes startServer throw AllowedRootsError. Env:
+   * OMNITERM_ALLOWED_ROOTS (comma-separated, overrides).
+   */
+  allowedRoots?: string[];
   /**
    * Extra tab-type plugins beyond the bundled default (terminal). Order
    * matters for WS upgrade dispatch — the first plugin to claim a URL
@@ -202,7 +229,9 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
   // arbitrary `initialCommand`) and the ttyd WebSocket proxy — allow code
   // execution in the user's shell. The threat model therefore assumes
   // network-level access control (trusted LAN, VPN, or SSH tunnel); set
-  // OMNITERM_HOST=127.0.0.1 to restrict to the local machine.
+  // OMNITERM_HOST=127.0.0.1 to restrict to the local machine. The Origin check
+  // (originCheck.ts) only stops OTHER websites in the user's browser from
+  // driving these routes cross-site; it is not authentication.
   const HOST = process.env.OMNITERM_HOST ?? opts.host ?? '0.0.0.0';
 
   // Names the operator wants to survive the pane env scrub (spec 001). Read
@@ -214,6 +243,24 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
     rawPassthrough !== undefined ? parseEnvPassthrough(rawPassthrough) : (opts.envPassthrough ?? []),
   );
 
+  // Origin check config, read before the strip below. Throws on a malformed
+  // entry so a typo fails the boot rather than locking the operator out.
+  const rawAllowedOrigins = process.env.OMNITERM_ALLOWED_ORIGINS;
+  const originGuard: OriginGuardOptions = {
+    allowlist: parseAllowedOrigins(
+      rawAllowedOrigins !== undefined ? [rawAllowedOrigins] : (opts.allowedOrigins ?? []),
+    ),
+    onReject: createRejectionLogger(),
+  };
+  if (originGuard.allowlist.includes('*')) {
+    console.warn('[omniterm] WARNING: allowed origins contains "*" — the cross-site Origin check is DISABLED');
+  }
+
+  const rawAllowedRoots = process.env.OMNITERM_ALLOWED_ROOTS;
+  setExtraAllowedRoots(
+    parseAllowedRoots(rawAllowedRoots !== undefined ? [rawAllowedRoots] : (opts.allowedRoots ?? [])),
+  );
+
   // Strip server-only env vars from process.env so they don't leak into
   // child processes (tmux, ttyd, spawned shells). Vars that MUST propagate
   // (OMNITERM_BROWSER_REGISTRY_URL etc.) are passed explicitly via tmux -e.
@@ -223,11 +270,16 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
     'OMNITERM_TTYD_PORT_MIN',
     'OMNITERM_TTYD_PORT_MAX',
     'OMNITERM_ENV_PASSTHROUGH',
+    'OMNITERM_ALLOWED_ORIGINS',
+    'OMNITERM_ALLOWED_ROOTS',
   ])
     delete process.env[name];
 
   const app = express();
   app.disable('x-powered-by');
+  // Cross-site request protection — FIRST, ahead of every router (host,
+  // embedder, plugin), so all of them inherit it. See originCheck.ts.
+  app.use(originCheckMiddleware(originGuard));
   app.use(express.json());
 
   if (opts.statusHandler) {
@@ -238,10 +290,12 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
   // Host API routes (workspace/repo/worktree mgmt, settings, files,
   // legacy create-session). Plugin-owned routes are mounted further down.
   app.use('/api', reposRouter);
+  app.use('/api', workspacesRouter);
   app.use('/api', sessionsRouter);
   app.use('/api', worktreesRouter);
   app.use('/api', settingsRouter);
   app.use('/api', fsRouter);
+  app.use('/api', gitRouter);
   app.use('/api', previewRouter);
 
   // When a custom DevTools bundle is provided, serve it at /devtools/
@@ -393,6 +447,9 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartServerH
   const server = http.createServer(app);
 
   server.on('upgrade', (req, socket, head) => {
+    // Cross-site WebSocket hijacking protection, on the ORIGINAL Origin —
+    // before any plugin (e.g. the CDP proxy) rewrites the header.
+    if (rejectUpgradeIfOriginNotAllowed(req, socket, originGuard)) return;
     const url = req.url || '';
     // Plugin upgrades take precedence — debugger claims /ws/debugger/*,
     // terminal plugin claims /t/:tabId/b/:browserId/* for CDP.

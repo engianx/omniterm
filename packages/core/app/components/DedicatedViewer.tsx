@@ -18,8 +18,6 @@ interface Props {
   filePath: string;
   /** Workspace root absolute path (matches FileTab.dirPath). */
   dirPath: string;
-  /** Mobile back affordance, mirrors FileViewer's. */
-  onBack?: () => void;
 }
 
 /**
@@ -51,18 +49,18 @@ class ViewerErrorBoundary extends Component<{ children: ReactNode }, { failed: b
  * Dispatches an in-place file viewer by `kind`, loading the concrete viewer's
  * chunk on demand. The Suspense fallback shows while that chunk downloads.
  */
-export default function DedicatedViewer({ kind, filePath, dirPath, onBack }: Props) {
+export default function DedicatedViewer({ kind, filePath, dirPath }: Props) {
   return (
     // Key by file so a transient chunk-load failure on one file doesn't stick
     // when the user opens a different file in the same tab slot.
     <ViewerErrorBoundary key={`${kind}:${dirPath}/${filePath}`}>
       <Suspense fallback={<div style={S.loading}>Loading viewer…</div>}>
         {kind === 'image' ? (
-          <ImageViewer filePath={filePath} dirPath={dirPath} onBack={onBack} />
+          <ImageViewer filePath={filePath} dirPath={dirPath} />
         ) : kind === 'pdf' ? (
-          <PdfViewer filePath={filePath} dirPath={dirPath} onBack={onBack} />
+          <PdfViewer filePath={filePath} dirPath={dirPath} />
         ) : kind === 'csv' ? (
-          <CsvViewer filePath={filePath} dirPath={dirPath} onBack={onBack} />
+          <CsvViewer filePath={filePath} dirPath={dirPath} />
         ) : (
           <div style={S.loading}>Viewer unavailable</div>
         )}

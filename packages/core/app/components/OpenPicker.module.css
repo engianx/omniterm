@@ -1,0 +1,197 @@
+/* Quick pick, VS Code style: a short panel near the top of the window. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10vh 8px 0;
+}
+
+.picker {
+  width: min(560px, 100%);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .backdrop {
+    padding-top: 8px;
+  }
+}
+
+.input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--link);
+}
+
+.picker > .input {
+  margin: 8px;
+  width: calc(100% - 16px);
+}
+
+.list {
+  overflow: auto;
+  min-height: 0;
+  padding-bottom: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.item.selected {
+  background: var(--accent);
+  color: var(--text-bright);
+}
+
+.primary {
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.selected .primary {
+  color: var(--text-bright);
+}
+
+.secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.liveDot,
+.dotSpacer {
+  width: 14px;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.liveDot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success, #3fb950);
+}
+
+.hint {
+  padding: 5px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hint kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* Touch screens have no Tab key to advertise. */
+@media (hover: none) {
+  .hint {
+    display: none;
+  }
+}
+
+.clone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.primaryBtn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 12px;
+  background: var(--accent);
+  color: var(--text-bright);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.secondaryBtn {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  background: none;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.status,
+.error {
+  padding: 6px 12px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  word-break: break-word;
+}
+
+.status {
+  color: var(--text-muted);
+}
+
+.error {
+  color: var(--danger);
+}

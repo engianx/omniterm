@@ -14,12 +14,24 @@ import type { Router } from 'express';
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 
+import { existsSync } from 'fs';
+import path from 'path';
+
 import type { HostContext, SpawnArgs, TabInstance, TabTypePlugin } from '../types.js';
 import {
   createTabRegistryRouter,
   handleCdpUpgrade,
   cleanupTab as cleanupTabRegistry,
+  LaunchRejectedError,
 } from '../../browserRegistry/tabRegistry.js';
+import { OMNITERM_BIN_DIR } from '../../lib/paths.js';
+import { createShimLauncher } from './lib/browserLaunch.js';
+
+function resolveShimPath(): string | null {
+  if (!OMNITERM_BIN_DIR) return null;
+  const p = path.join(OMNITERM_BIN_DIR, 'omniterm-browser.js');
+  return existsSync(p) ? p : null;
+}
 
 // ------------------------------------------------------------------------
 // Terminal-specific instance shape — carries state the terminal UI reads.
@@ -56,7 +68,19 @@ export function createTerminalPlugin(
       // in the tab-registry router: registrations, SSE events, devtools
       // iframe proxy. Unmatched paths (e.g. /t/:tabId/ws for ttyd) fall
       // through to the host's ttyd catch-all.
-      return createTabRegistryRouter({ devtoolsFrontendUrl: opts.devtoolsFrontendUrl });
+      const launchShim = createShimLauncher({ shimPath: resolveShimPath() });
+      return createTabRegistryRouter({
+        devtoolsFrontendUrl: opts.devtoolsFrontendUrl,
+        // "New browser tab" for a terminal with no live browser: run the same
+        // shim $BROWSER points at, registered under this terminal.
+        launchBrowser: async ({ tabId, registryUrl, url }) => {
+          // Lazy: sessions.js recovers tmux state on load, which a plain
+          // import of this plugin module (tests, manifest checks) must not do.
+          const { getSession } = await import('./lib/sessions.js');
+          if (!getSession(tabId)) throw new LaunchRejectedError(`No terminal session ${tabId}`);
+          await launchShim({ registryUrl, url });
+        },
+      });
     },
 
     handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {

@@ -9,7 +9,7 @@
  * their own `Map<tabId, ...>` if they need them.
  */
 
-import type { ReactNode } from 'react';
+import { createElement, Fragment, type CSSProperties, type ReactNode } from 'react';
 
 /** A tab in the host's tab list. Plugin-extension fields live elsewhere. */
 export interface Tab {
@@ -19,6 +19,31 @@ export interface Tab {
   id: string;
   /** Display label in the tab bar. Plugins/host may rename. */
   name: string;
+  /** Unsaved changes. The tab bar shows a dot in place of the close button. */
+  dirty?: boolean;
+  /** Hover text (e.g. a file's full path or a page's URL). Defaults to `name`. */
+  title?: string;
+  /** Image drawn as the tab's icon (e.g. a page favicon). Falls back to the
+   *  owning integration's `tabIcon`, then to the host's per-type default. */
+  iconUrl?: string;
+  /** `false` hides double-click rename (file and browser tabs are named by
+   *  what they show). Default: renamable. */
+  renamable?: boolean;
+}
+
+/** A section of the left sidebar, shown beside the built-in Workspaces list. */
+export interface SidebarPanel {
+  /** Stable key (also persisted as the selected section). */
+  id: string;
+  /** Label on the sidebar's section switcher. */
+  label: string;
+  /** Icon on the sidebar's section switcher. */
+  icon: ReactNode;
+  /** Count pill on the switcher button (e.g. pending changes); hidden at 0. */
+  badge?: number;
+  /** Section body. `closeSidebar` lets an overlay/mobile sidebar dismiss
+   *  itself after the user picks something (e.g. opens a file). */
+  render: (ctx: { isMobile: boolean; closeSidebar: () => void }) => ReactNode;
 }
 
 /**
@@ -32,17 +57,70 @@ export interface HostApi {
    * Activates the new tab unless `options.activate === false` (used by the
    * host to spawn background landing tabs without stealing focus).
    */
-  openTab(tab: Tab, options?: { activate?: boolean }): void;
+  openTab(tab: Tab, options?: { activate?: boolean; after?: string }): void;
+  /** Patch a tab's display fields (name, dirty, title, iconUrl). No-op for an
+   *  unknown id. */
+  updateTab(id: string, patch: Partial<Omit<Tab, 'id' | 'type'>>): void;
+  /** Drop a tab whose backing thing is already gone (a closed page, a deleted
+   *  file). Unlike a user close, this does NOT run `beforeCloseTab` or
+   *  `onCloseTab`. If it was active, the host activates a neighbour. */
+  removeTab(id: string): void;
+  /** Bring an existing tab to the front. No-op for an unknown id. */
+  activateTab(id: string): void;
 }
 
-/** Render context passed to a plugin's `mainContent` slot. */
+/** Side of the content area a pane sits on (split view: primary = left). */
+export type PaneSide = 'primary' | 'secondary';
+
+/** Render context passed to a plugin's `mainContent` slot. The host calls the
+ *  slot once per VISIBLE pane (one, or two in a split), each inside its own
+ *  host-positioned box (`position: absolute`, `display: flex`). */
 export interface MainContentContext {
-  /** Currently active tab; never null when the slot is invoked. */
+  /** The tab this pane shows (the active tab in single-pane mode). Never null
+   *  when the slot is invoked. */
   activeTab: Tab;
-  /** Whether the host's "show browsers" top-bar toggle is on. Plugins
-   *  that render a side-pane browser view (terminal, agent-standalone)
-   *  use this to decide whether to render it inline. */
+  /** @deprecated Browser pages are tabs now; the host always passes `false`. */
   browserPanelOpen: boolean;
+  /** Which pane this call renders. Absent from older hosts: read as 'primary'. */
+  pane?: PaneSide;
+  /** This pane holds the strip's active tab. Absent from older hosts: true. */
+  focused?: boolean;
+  /** A pane/sidebar divider is being dragged: hold off expensive relayouts
+   *  (the browser view pauses screencast refits) until it flips back. */
+  resizing?: boolean;
+}
+
+/** Render state passed to a plugin's `iframeTabsLayer` slot. */
+export interface IframeTabsLayerState {
+  /** The strip's active tab (= the focused pane's tab). */
+  activeTabId: string | null;
+  /**
+   * Where a tab must render: an absolutely-positioned box within the content
+   * area (`position`, `top`, `right`, `bottom`, `left` — spread it onto the
+   * pane's root, and do not also set `inset`), or null when the tab is not
+   * visible (keep it mounted, `display: none`). Returned objects are stable
+   * while the layout is unchanged, so they are safe props for memo'd panes.
+   * Absent from older hosts: show only `activeTabId`, filling the area.
+   */
+  paneStyleFor?: (tabId: string) => CSSProperties | null;
+}
+
+/** The box that fills the whole content area (single pane). */
+export const FULL_PANE_STYLE: CSSProperties = Object.freeze({
+  position: 'absolute',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+}) as CSSProperties;
+
+/** `state.paneStyleFor`, falling back to the single-pane rule for older hosts. */
+export function paneStyleResolver(
+  state: IframeTabsLayerState,
+): (tabId: string) => CSSProperties | null {
+  return (
+    state.paneStyleFor ?? ((tabId: string) => (tabId === state.activeTabId ? FULL_PANE_STYLE : null))
+  );
 }
 
 /**
@@ -79,6 +157,14 @@ export interface PluginIntegration {
   /** Called by the host when a tab whose `type` belongs to this plugin
    *  is closed. Plugins should ignore tabs of other types. */
   onCloseTab?: (tab: Tab) => void;
+  /** Asked before a user-initiated close of a tab this integration owns.
+   *  Resolve `false` to keep the tab (e.g. the user cancelled an unsaved-
+   *  changes prompt). Every integration is asked; any `false` vetoes. */
+  beforeCloseTab?: (tab: Tab) => boolean | Promise<boolean>;
+  /** Icon for a tab this integration owns; `null` for other tabs. */
+  tabIcon?: (tab: Tab) => ReactNode | null;
+  /** Extra left-sidebar sections (e.g. the file tree). */
+  sidebarPanels?: ReadonlyArray<SidebarPanel>;
   /** Tab types whose state is process-bound and should NOT be restored
    *  from saved settings on page reload. */
   ephemeralTabTypes?: ReadonlySet<string>;
@@ -95,8 +181,18 @@ export interface PluginIntegration {
    *  `null` for tabs this integration doesn't own. */
   mainContent?: (ctx: MainContentContext) => ReactNode;
   /** Render slot for the host's iframe overlay. Each integration mounts
-   *  its own live tabs (all stay rendered; CSS toggles visibility). */
-  iframeTabsLayer?: (state: { activeTabId: string | null }) => ReactNode;
+   *  its own live tabs (all stay rendered; CSS toggles visibility). Position
+   *  each visible tab with `state.paneStyleFor(tabId)` and set `paneAware`.
+   *  Elements must manage their own `pointer-events` (a layer's root should be
+   *  `none` wherever it shows nothing, its visible panes `auto`). */
+  iframeTabsLayer?: (state: IframeTabsLayerState) => ReactNode;
+  /** This integration's `iframeTabsLayer` positions its panes with
+   *  `paneStyleFor`. Without it (a legacy layer that only reads
+   *  `activeTabId` and fills the area), `composeIntegrations` confines the
+   *  layer to the focused pane's box with `pointer-events: none`, so it can
+   *  only show the focused tab, and its interactive elements must set
+   *  `pointer-events: auto` themselves. */
+  paneAware?: boolean;
   /** Workspace paths with pending alerts (drives the workspace-icon
    *  badge). Driven by plugin SSE / polling. */
   alertedPaths?: ReadonlySet<string>;
@@ -133,6 +229,7 @@ export function composeIntegrations(...integrations: ReadonlyArray<PluginIntegra
   for (const i of integrations) for (const id of i.alertedTabIds ?? []) alertedTabIds.add(id);
   // `!== false` so `undefined` (didn't gate) and `true` both pass; only `false` blocks.
   const workspaceReady = integrations.every((i) => i.workspaceReady !== false);
+  const sidebarPanels = integrations.flatMap((i) => i.sidebarPanels ?? []);
   const refreshHandlers = integrations.flatMap((i) =>
     i.onWorkspaceRefresh ? [i.onWorkspaceRefresh] : [],
   );
@@ -165,6 +262,20 @@ export function composeIntegrations(...integrations: ReadonlyArray<PluginIntegra
     onCloseTab: (tab: Tab) => {
       for (const i of integrations) i.onCloseTab?.(tab);
     },
+    beforeCloseTab: async (tab: Tab): Promise<boolean> => {
+      for (const i of integrations) {
+        if (i.beforeCloseTab && (await i.beforeCloseTab(tab)) === false) return false;
+      }
+      return true;
+    },
+    tabIcon: (tab: Tab): ReactNode | null => {
+      for (const i of integrations) {
+        const icon = i.tabIcon?.(tab);
+        if (icon) return icon;
+      }
+      return null;
+    },
+    sidebarPanels,
     mainContent: (ctx: MainContentContext): ReactNode => {
       for (const i of integrations) {
         const r = i.mainContent?.(ctx);
@@ -172,10 +283,24 @@ export function composeIntegrations(...integrations: ReadonlyArray<PluginIntegra
       }
       return null;
     },
-    iframeTabsLayer: (state: { activeTabId: string | null }): ReactNode => {
-      const layers = integrations
-        .map((i) => i.iframeTabsLayer?.(state))
-        .filter((n): n is ReactNode => n != null && n !== false);
+    iframeTabsLayer: (state: IframeTabsLayerState): ReactNode => {
+      const layers: ReactNode[] = [];
+      integrations.forEach((i, index) => {
+        const node = i.iframeTabsLayer?.(state);
+        if (node == null || node === false) return;
+        if (i.paneAware) {
+          // Keyed by integration (not layer) index: a layer that renders
+          // nothing this time must not shift the others' identity.
+          layers.push(createElement(Fragment, { key: `layer-${index}` }, node));
+          return;
+        }
+        // Legacy layer: it fills its container with the active tab, so give it
+        // the focused pane's box as that container.
+        const box = (state.activeTabId && state.paneStyleFor?.(state.activeTabId)) || FULL_PANE_STYLE;
+        layers.push(
+          createElement('div', { key: `legacy-layer-${index}`, style: { ...box, pointerEvents: 'none' } }, node),
+        );
+      });
       return layers.length === 0 ? null : layers;
     },
   };

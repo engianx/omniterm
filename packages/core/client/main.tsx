@@ -14,6 +14,10 @@ import '../app/globals.css';
 import Home, { composeIntegrations, useHomeState } from '../app/page';
 import { useTerminalIntegration } from '../plugins/terminal/integration';
 import { useManifestIntegration } from '../app/manifestPlugins';
+import { useBrowserIntegration } from '../browserRegistry/useBrowserIntegration';
+import { useFilesIntegration } from '../app/files/useFilesIntegration';
+import { useChangesIntegration } from '../app/changes/useChangesIntegration';
+import { openToSide } from '../app/splitView';
 
 function App() {
   // See apps/testbox/client/main.tsx for why we route through a ref:
@@ -29,12 +33,7 @@ function App() {
     tabs: homeState.tabs,
     setTabs: homeState.setTabs,
     setActiveTabId: homeState.setActiveTabId,
-    browserPanelOpen: homeState.browserPanelOpen,
-    setBrowserPanelOpen: homeState.setBrowserPanelOpen,
-    browserPanelMode: homeState.browserPanelMode,
-    browserInspectorPosition: homeState.browserInspectorPosition,
     isMobile: homeState.isMobile,
-    filesPanelOpen: homeState.filesPanelOpen,
     settingsHydrated: homeState.settingsHydrated,
     refreshWorkspaces: homeState.refreshWorkspaces,
   });
@@ -44,7 +43,43 @@ function App() {
   // integration is empty and the shell is the plain terminal host.
   const manifest = useManifestIntegration({ tabs: homeState.tabs });
 
-  const composed = composeIntegrations(terminal.integration, manifest.integration);
+  // Browser pages are tabs (type 'browser'), owned by the browser registry.
+  const browser = useBrowserIntegration({
+    activePath: homeState.activePath,
+    tabs: homeState.tabs,
+    activeTabId: homeState.activeTabId,
+    host: homeState.hostApi,
+    isMobile: homeState.isMobile,
+    browserInspectorPosition: homeState.browserInspectorPosition,
+  });
+
+  // Files: file tabs plus the sidebar file tree. Its context menu / indicators
+  // come from the other integrations (e.g. "open in terminal").
+  const preFiles = composeIntegrations(terminal.integration, manifest.integration);
+  const files = useFilesIntegration({
+    activePath: homeState.activePath,
+    isMobile: homeState.isMobile,
+    settingsHydrated: homeState.settingsHydrated,
+    tabs: homeState.tabs,
+    activeTabId: homeState.activeTabId,
+    host: homeState.hostApi,
+    fileHandlers: preFiles.fileHandlers,
+    fileIndicatorPaths: preFiles.fileIndicatorPaths,
+    openToSide: (tabId) =>
+      homeState.applySplit((split, active, ids) => openToSide(split, active, ids, tabId)),
+  });
+
+  // Git changes: the sidebar's Changes section (only inside a git repo).
+  const changes = useChangesIntegration({ activePath: homeState.activePath });
+
+  // Order matters for the [+] menu: Terminal, plugins, Browser.
+  const composed = composeIntegrations(
+    terminal.integration,
+    manifest.integration,
+    browser.integration,
+    files.integration,
+    changes.integration,
+  );
   composedRefreshRef.current = composed.onWorkspaceRefresh;
 
   return <Home state={homeState} {...composed} workspaceOrphans={terminal.orphanSessions} />;

@@ -20,7 +20,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { HostApi, PluginIntegration, Tab } from './types';
+import {
+  FULL_PANE_STYLE,
+  paneStyleResolver,
+  type HostApi,
+  type IframeTabsLayerState,
+  type PluginIntegration,
+  type Tab,
+} from './types';
 import type { PluginManifestEntry, PluginInstance } from '../plugins/types.js';
 import { reconcileInstances, isTabReady, buildPluginIframeSrc, type TrackedInstance } from './manifestReconcile';
 import { track } from './telemetryClient';
@@ -224,12 +231,12 @@ export function useManifestIntegration({ tabs }: { tabs: Tab[] }): {
   );
 
   const iframeTabsLayer = useCallback(
-    ({ activeTabId }: { activeTabId: string | null }) => (
+    (state: IframeTabsLayerState) => (
       <ManifestIframeHost
         tabs={tabs}
         entryByType={entryByType}
         instances={instances}
-        activeTabId={activeTabId}
+        paneStyleFor={paneStyleResolver(state)}
       />
     ),
     [tabs, entryByType, instances],
@@ -243,6 +250,7 @@ export function useManifestIntegration({ tabs }: { tabs: Tab[] }): {
       fileIndicatorPaths,
       onCloseTab,
       iframeTabsLayer,
+      paneAware: true,
     }),
     [tabTypeChoices, fileHandlers, ephemeralTabTypes, fileIndicatorPaths, onCloseTab, iframeTabsLayer],
   );
@@ -259,36 +267,39 @@ function ManifestIframeHost({
   tabs,
   entryByType,
   instances,
-  activeTabId,
+  paneStyleFor,
 }: {
   tabs: Tab[];
   entryByType: Map<string, PluginManifestEntry>;
   instances: Record<string, TrackedInstance>;
-  activeTabId: string | null;
+  paneStyleFor: (tabId: string) => React.CSSProperties | null;
 }) {
   const pluginTabs = tabs.filter((t) => entryByType.has(t.type));
   const ready = pluginTabs.filter((t) => isTabReady(t, entryByType, instances));
-  const activeReady = ready.some((t) => t.id === activeTabId);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: activeReady ? 'auto' : 'none' }}>
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       {ready.map((t) => {
         const entry = entryByType.get(t.type)!;
         const src = buildPluginIframeSrc(entry.iframe.urlTemplate, t.id, instances[t.id]?.file);
+        const paneStyle = paneStyleFor(t.id);
+        // A wrapper takes the pane box: an absolutely-positioned iframe would
+        // not stretch between left/right (replaced elements keep their size).
         return (
-          <iframe
+          <div
             key={t.id}
-            src={src}
-            title={t.name}
             style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              display: t.id === activeTabId ? 'block' : 'none',
+              ...(paneStyle ?? FULL_PANE_STYLE),
+              display: paneStyle ? 'block' : 'none',
+              pointerEvents: 'auto',
             }}
-          />
+          >
+            <iframe
+              src={src}
+              title={t.name}
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+            />
+          </div>
         );
       })}
     </div>

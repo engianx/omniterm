@@ -82,6 +82,10 @@ Run `omniterm --help` to see every command-line option.
 ### Terminals
 
 - Open several terminal tabs and split each tab into multiple panes.
+- Put any two tabs side by side: a terminal and a file, or a terminal and a
+  browser page.
+- Open a terminal in any folder from the file tree, or drop a file on a
+  terminal to type its path.
 - Arrange panes side by side or top to bottom.
 - Reorder and rename tabs.
 - Scroll through terminal output and select text normally.
@@ -89,9 +93,11 @@ Run `omniterm --help` to see every command-line option.
 
 ### Workspaces
 
-- Switch between Git repositories, worktrees, and regular directories.
-- Clone a repository or browse the server's files to add a workspace.
-- Create and manage Git worktrees from the browser.
+- Open any folder as a workspace. omniterm detects Git on its own, so a
+  repository and a plain directory work the same way.
+- Type a path with completion, or clone a repository, from one Open box.
+- See each repository's worktrees beneath it, and create or remove worktrees
+  from the browser.
 - Run multiple coding agents in separate workspaces and watch them side by side.
 
 ### Files
@@ -100,6 +106,16 @@ Run `omniterm --help` to see every command-line option.
 - View images, PDFs, and CSV or TSV files without leaving omniterm.
 - See file changes when another program or coding agent edits a file.
 - Load editor support only when you open a file that needs it.
+- Create, rename, move, and delete files and folders from the file tree.
+
+### Git
+
+- See changed files in the Changes view, then stage, unstage, discard, and
+  commit them.
+- Open a change as a diff, open the file itself, or find it in the file tree.
+- See the branch, commits ahead and behind, and the number of changes in the
+  status bar.
+- Switch or create branches, or open a branch in a new worktree.
 
 ### Interactive remote browser
 
@@ -111,7 +127,7 @@ Chrome starts on the server and appears in omniterm as a live view.
 - Click, type, and scroll the remote page from any device.
 - Finish sign-in flows on a server without a desktop.
 - Switch between running browsers and their open pages from the tab strip.
-- Dock the panel beside your terminal or float it on top.
+- Open pages as tabs next to your terminals and files.
 - Put Chrome DevTools beside the page, below it, or hide it.
 - Chrome uses its own profile, so your personal cookies and passwords stay out
   of it.
@@ -149,6 +165,27 @@ such as Tailscale.
 
 Make sure your firewall or network rules allow access only from devices you
 trust.
+
+**Origin check.** To stop other websites open in your browser from driving
+omniterm cross-site (form posts, terminal and Chrome WebSockets), every
+state-changing request and every WebSocket that carries an `Origin` header must
+come from omniterm's own address: the `Origin` host and port must match the
+`Host` header, or the first `X-Forwarded-Host` when a reverse proxy sets one, so
+a typical proxy works without configuration. Requests without an `Origin`
+(curl, scripts, the bundled browser shim) are not affected. If your proxy
+rewrites both headers, allow the public origin explicitly with
+`--allowed-origins https://omniterm.example.com` (comma-separated, repeatable;
+or `OMNITERM_ALLOWED_ORIGINS`, which takes precedence). `--allowed-origins '*'`
+turns the check off and is unsafe. This is not authentication: it cannot stop
+DNS rebinding, where an attacker's hostname resolves to your omniterm and so
+matches `Host`; keep omniterm off untrusted networks, or put real auth in front.
+
+**File access roots.** The Files view, git view, file previews and the
+workspace folder picker reach only your home directory and the workspaces you
+have added (terminals are not limited). To browse elsewhere — another user's
+home, a bind mount — add roots with `--allowed-roots /home,/srv/data`
+(comma-separated absolute paths, repeatable; or `OMNITERM_ALLOWED_ROOTS`, which
+takes precedence).
 
 ## Pass environment variables to terminals
 

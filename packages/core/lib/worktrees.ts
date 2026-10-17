@@ -1,6 +1,7 @@
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { copyFileSync, readdirSync } from 'fs';
 import path from 'path';
+import { promisify } from 'util';
 import { generateName } from '../plugins/terminal/lib/naming.js';
 import { worktreeIdForPath } from './ids.js';
 
@@ -9,19 +10,13 @@ import { worktreeIdForPath } from './ids.js';
 import type { Worktree } from '@omniterm/plugin-types';
 export type { Worktree };
 
+const execFileAsync = promisify(execFile);
+
 function execGit(args: string[], cwd: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf-8' });
 }
 
-function parseWorktreeList(repoPath: string, repoId: string): Worktree[] {
-  let output: string;
-  try {
-    output = execGit(['worktree', 'list', '--porcelain'], repoPath);
-  } catch (e) {
-    console.error('git worktree list failed:', e);
-    return [];
-  }
-
+function parseWorktreePorcelain(output: string, repoId: string): Worktree[] {
   const worktrees: Worktree[] = [];
   const blocks = output.split('\n\n').filter((b) => b.trim());
   let isFirst = true;
@@ -65,7 +60,31 @@ function parseWorktreeList(repoPath: string, repoId: string): Worktree[] {
 }
 
 export function listWorktrees(repoPath: string, repoId: string): Worktree[] {
-  return parseWorktreeList(repoPath, repoId);
+  try {
+    return parseWorktreePorcelain(execGit(['worktree', 'list', '--porcelain'], repoPath), repoId);
+  } catch (e) {
+    console.error('git worktree list failed:', e);
+    return [];
+  }
+}
+
+/**
+ * Non-blocking `listWorktrees`, for listing every workspace's worktrees in
+ * parallel: a synchronous spawn per repo would serialize the whole listing on
+ * the event loop.
+ */
+export async function listWorktreesAsync(repoPath: string, repoId: string): Promise<Worktree[]> {
+  try {
+    const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+    return parseWorktreePorcelain(stdout, repoId);
+  } catch (e) {
+    console.error('git worktree list failed:', e);
+    return [];
+  }
 }
 
 export function listBranches(repoPath: string): string[] {

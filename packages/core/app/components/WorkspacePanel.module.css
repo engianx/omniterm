@@ -1,207 +1,95 @@
 .panel {
   position: relative;
   height: 100%;
+  min-height: 0;
+  flex: 1;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
   user-select: none;
 }
 
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  padding: 8px 8px 8px 8px;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.title:hover {
-  color: var(--text);
-}
-
-.spacer {
+.scroll {
   flex: 1;
-}
-
-.iconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  color: var(--text-muted);
-  cursor: pointer;
-  border: none;
-  background: none;
-  border-radius: 3px;
-}
-
-.iconBtn:hover {
-  color: var(--text);
-  background: var(--bg-tertiary);
-}
-
-/* Panels */
-.panel {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
-}
-
-.panelScroll {
-  flex: 1;
   overflow: auto;
   padding: 4px 0;
 }
 
-/* Divider */
-.divider {
+/* One row per workspace; linked worktrees indent under their repo. */
+.row {
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  height: 24px;
-  cursor: row-resize;
-  touch-action: none;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-tertiary);
-}
-
-.divider:hover {
-  background: var(--bg);
-}
-
-.dividerLabel {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-/* Groups (repos or dirs) */
-.group {
-  margin-bottom: 2px;
-}
-
-.groupHeader {
-  display: flex;
-  align-items: center;
-  padding: 4px 8px;
   gap: 4px;
-}
-
-.groupHeader:hover .groupActions {
-  opacity: 1;
-}
-
-.expandBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 22px;
-  color: var(--text-muted);
-  cursor: pointer;
-  border: none;
-  background: none;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.expandBtn:hover {
-  color: var(--text);
-  background: var(--bg-tertiary);
-}
-
-.groupName {
+  height: 26px;
+  padding-right: 4px;
   font-size: 12px;
-  font-weight: 600;
   color: var(--text);
   cursor: pointer;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.groupActions {
-  display: flex;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.actionBtn {
-  font-size: 14px;
-  padding: 0 4px;
-  color: var(--text-muted);
-  cursor: pointer;
-  border: none;
-  background: none;
-  border-radius: 3px;
-  line-height: 1;
-}
-
-.actionBtn:hover {
-  color: var(--text);
+.row:hover {
   background: var(--bg-tertiary);
 }
 
-/* Items (worktrees or sessions) */
-.itemList {
-  padding: 0;
-}
-
-.item {
-  display: flex;
-  align-items: center;
-  padding: 3px 12px 3px 44px;
-  cursor: pointer;
-  font-size: 12px;
-  gap: 6px;
-}
-
-.item:hover {
-  background: var(--bg-tertiary);
-}
-
-.item:hover .deleteBtn {
-  opacity: 1;
-}
-
-.item.active {
+.row.active {
   background: var(--accent);
   color: var(--text-bright);
 }
 
-.sessionDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success, #3fb950);
+.missing .name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.discovered .name {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.chevron,
+.chevronSpacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
   flex-shrink: 0;
 }
 
+.chevron {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.chevron:hover {
+  color: var(--text);
+}
+
+.dotSlot {
+  display: inline-flex;
+  justify-content: center;
+  width: 8px;
+  flex-shrink: 0;
+}
+
+.sessionDot,
 .alertDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+}
+
+.sessionDot {
+  background: var(--success, #3fb950);
+}
+
+.alertDot {
   background: var(--warning, #d29922);
-  flex-shrink: 0;
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -215,24 +103,66 @@
   }
 }
 
-.itemName {
-  flex: 1;
+.name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
-.deleteBtn {
+/* The branch is context, not the headline: small, muted, truncates first. */
+.branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.active .branch {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.moreBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s;
 }
 
-.active .deleteBtn {
-  opacity: 0.6;
+.row:hover .moreBtn,
+.moreBtn:focus-visible {
+  opacity: 0.7;
+}
+
+.moreBtn:hover {
+  opacity: 1;
+  background: var(--bg-tertiary);
+}
+
+/* No hover on touch screens: keep the actions reachable, faintly. */
+@media (hover: none) {
+  .moreBtn {
+    opacity: 0.4;
+  }
 }
 
 .renameInput {
   flex: 1;
+  min-width: 0;
   padding: 1px 4px;
   font-size: 12px;
   background: var(--bg);
@@ -242,26 +172,6 @@
   outline: none;
 }
 
-/* Directory items (flat list) */
-.dirItem {
-  display: flex;
-  align-items: center;
-  padding: 4px 12px;
-  cursor: pointer;
-  font-size: 12px;
-  gap: 6px;
-}
-
-.dirItem:hover {
-  background: var(--bg-tertiary);
-}
-
-.dirItem.active {
-  background: var(--accent);
-  color: var(--text-bright);
-}
-
-/* Empty states */
 .empty {
   padding: 16px 12px;
   color: var(--text-muted);
@@ -269,156 +179,88 @@
   font-size: 12px;
 }
 
-.emptyAction {
-  display: block;
-  margin: 8px auto 0;
-  padding: 4px 10px;
-  background: transparent;
-  color: var(--accent, #58a6ff);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.emptyAction:hover {
-  background: var(--bg-secondary);
-}
-
-.emptySmall {
-  padding: 4px 12px 4px 44px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-/* Footer */
 .footer {
   border-top: 1px solid var(--border);
-  padding: 8px;
+  padding: 6px 8px;
   flex-shrink: 0;
 }
 
-.addMenu {
+.openBtn {
   display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-}
-
-.addBtn {
-  flex: 1;
-  padding: 6px 0;
+  width: 100%;
+  padding: 5px 0;
   font-size: 12px;
   color: var(--text-muted);
   border: 1px dashed var(--border);
   border-radius: 4px;
   cursor: pointer;
   background: none;
-  text-align: center;
 }
 
-.addBtn:hover {
+.openBtn:hover {
   color: var(--text);
   border-color: var(--text-muted);
 }
 
-.errorMsg {
-  font-size: 11px;
-  color: var(--danger);
+/* Row actions menu (right-click or the ⋯ button). */
+.menuCatcher {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+}
+
+.menu {
+  position: fixed;
+  z-index: 111;
+  min-width: 180px;
   padding: 4px 0;
-  word-break: break-all;
-}
-
-/* Dialog (clone / browse) */
-.dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.dialogInput {
-  width: 100%;
-  padding: 5px 8px;
-  font-size: 12px;
-  background: var(--bg);
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 3px;
-  outline: none;
-  font-family: inherit;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
-.dialogInput:focus {
-  border-color: var(--link);
-}
-
-.dialogActions {
-  display: flex;
-  gap: 6px;
-}
-
-.primaryBtn {
-  flex: 1;
-  padding: 4px 0;
+.menuItem {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  text-align: left;
   font-size: 12px;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
   background: var(--accent);
   color: var(--text-bright);
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
+  outline: none;
 }
 
-.primaryBtn:hover:not(:disabled) {
-  background: var(--accent-hover);
+.menuItem.danger {
+  color: var(--danger);
 }
 
-.primaryBtn:disabled {
-  opacity: 0.5;
-  cursor: default;
+.menuItem.danger:hover {
+  color: var(--text-bright);
+  background: var(--danger);
 }
 
-.secondaryBtn {
-  padding: 4px 10px;
-  font-size: 12px;
+.headerBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: var(--tab-height);
+  flex-shrink: 0;
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-  background: none;
 }
 
-.secondaryBtn:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.browsePath {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 4px 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.browseList {
-  max-height: 200px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--bg);
-}
-
-.browseItem {
-  padding: 3px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.browseItem:hover {
-  background: var(--bg-tertiary);
+.headerBtn:hover {
   color: var(--text-bright);
 }

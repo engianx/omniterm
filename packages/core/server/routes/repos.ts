@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { listRepos, getRepo, cloneRepo, addLocalPath, removeRepo } from '../../lib/repos.js';
 import { displayNameForPath, repoIdForPath } from '../../lib/ids.js';
+import { WorkspaceError } from '../../lib/workspaces.js';
 import { listWorktrees, createWorktree } from '../../lib/worktrees.js';
 import { listTmuxSessions } from '../../plugins/terminal/lib/tmux.js';
 
@@ -20,11 +21,11 @@ reposRouter.post('/repos', async (req, res) => {
     const result = localPath ? addLocalPath(localPath) : null;
     const repo = result
       ? { id: repoIdForPath(result.path), name: displayNameForPath(result.path), ...result }
-      : cloneRepo(url, destination);
+      : await cloneRepo(url, destination);
     res.status(201).json(repo);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
-    res.status(message.includes('already') ? 409 : 400).json({ error: message });
+    res.status(e instanceof WorkspaceError ? e.status : 400).json({ error: message });
   }
 });
 

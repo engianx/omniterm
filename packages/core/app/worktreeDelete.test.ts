@@ -3,15 +3,19 @@ import test from 'node:test';
 import { worktreeDeleteUrl, worktreeStatusUrl, probeIsDirty } from './worktreeDelete';
 
 test('worktreeDeleteUrl forces only when dirty', () => {
-  assert.equal(worktreeDeleteUrl('wt-x', true), '/api/worktrees/wt-x?force=true');
-  assert.equal(worktreeDeleteUrl('wt-x', false), '/api/worktrees/wt-x');
+  assert.equal(
+    worktreeDeleteUrl('/src/app-x', true),
+    '/api/workspaces/worktrees?path=%2Fsrc%2Fapp-x&force=true',
+  );
+  assert.equal(worktreeDeleteUrl('/src/app-x', false), '/api/workspaces/worktrees?path=%2Fsrc%2Fapp-x');
 });
 
-test('worktreeDeleteUrl encodes the id so special chars do not break the URL', () => {
-  // A branch/worktree name with ? or # would otherwise truncate the path.
-  assert.equal(worktreeDeleteUrl('wt-a?b', true), '/api/worktrees/wt-a%3Fb?force=true');
-  assert.equal(worktreeDeleteUrl('wt-a#b', true), '/api/worktrees/wt-a%23b?force=true');
-  assert.equal(worktreeDeleteUrl('wt-a b', false), '/api/worktrees/wt-a%20b');
+test('worktreeDeleteUrl encodes the path so special chars do not break the URL', () => {
+  // A worktree path with ?, # or & would otherwise truncate or split the query.
+  assert.equal(
+    worktreeDeleteUrl('/a?b#c&force=true', false),
+    '/api/workspaces/worktrees?path=%2Fa%3Fb%23c%26force%3Dtrue',
+  );
 });
 
 test('worktreeStatusUrl encodes the id like the delete URL', () => {

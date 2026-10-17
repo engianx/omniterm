@@ -34,11 +34,16 @@ export { parsePluginSpecs, validatePluginModule, PluginSpecError } from './lib/p
 // never handled here; the wrapper reads them from the backend's environment.
 export { parseEnvPassthroughArgv, EnvNameError } from './lib/sessionEnv.js';
 
+// Origin check (cross-site request / WebSocket hijacking protection). startServer
+// installs it; the error is thrown for a malformed `allowedOrigins` entry.
+export { OriginConfigError, isOriginAllowed, parseAllowedOrigins } from './server/originCheck.js';
+export { AllowedRootsError, parseAllowedRoots } from './lib/allowedRoots.js';
+
 // Browser registry primitives — for plugin authors that want their tab's
-// MCP/sandbox child processes to register browsers and have them rendered
-// in a TabBrowserView (terminal, agent, future plugins). The router and
-// upgrade handler are mounted under each plugin's URL prefix; the
-// TabBrowserView component takes a `tabBaseUrl` matching that prefix.
+// MCP/sandbox child processes to register browsers (terminal, agent, future
+// plugins). The router and upgrade handler are mounted under each plugin's URL
+// prefix. In the built-in UI each registered page becomes its own top-level
+// tab (browserRegistry/useBrowserIntegration.tsx, terminal-owned for now).
 // Repo management — for host apps that clone repos externally (e.g. testbox
 // bootstrap) and need to register them in the workspace panel.
 export { addLocalPath } from './lib/repos.js';
@@ -47,6 +52,7 @@ export {
   createTabRegistryRouter,
   handleCdpUpgrade,
   cleanupTab as cleanupBrowserRegistry,
+  claimPage as claimBrowserPage,
   listBrowsers,
   type BrowserEntry,
   type BrowserView,

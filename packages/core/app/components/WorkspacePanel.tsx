@@ -1,28 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from './WorkspacePanel.module.css';
-import TopBar, { topBarActionStyle } from './TopBar';
-import { useResizeDrag, type DragInfo } from './ResizeHandle';
-import { filterWorkspacePanelData, hasActiveWorkspacePath } from './workspaceFilter';
-import { buildRepoLabels } from './repoLabels';
-
-interface RepoInfo {
-  id: string;
-  name: string;
-  remoteUrl: string;
-  path: string;
-}
-
-interface WorktreeInfo {
-  id: string;
-  repoId: string;
-  branch: string;
-  path: string;
-  name: string;
-  sessionCount: number;
-  isMain?: boolean;
-}
+import OpenPicker from './OpenPicker';
+import { buildWorkspaceRows, type WorkspaceEntry, type WorkspaceRow } from './workspaceList';
+import { PlusIcon } from './icons';
 
 interface OrphanSession {
   name: string;
@@ -30,549 +12,313 @@ interface OrphanSession {
 }
 
 interface Props {
-  repos: RepoInfo[];
-  worktreesByRepo: Record<string, WorktreeInfo[]>;
+  workspaces: WorkspaceEntry[];
   orphanSessions: Record<string, OrphanSession[]>;
-  activeWorktreeId: string | null;
   activePath: string | null;
-  alertedPaths: Set<string>;
-  activeOnly: boolean;
-  onSelectWorktree: (wt: WorktreeInfo) => void;
-  onCreateWorktree: (repoId: string) => void;
-  onDeleteWorktree: (wt: WorktreeInfo) => void;
-  onRenameBranch: (wtId: string, newName: string) => void;
-  onCloneRepo: (url: string, destination: string) => Promise<Response>;
-  onAddLocalRepo: (path: string) => void;
-  /** `label` is the rendered row name — the destructive confirm shows it,
-   *  since the id is a path digest that matches nothing on screen. */
-  onDeleteRepo: (repoId: string, label: string) => void;
-  onRemoveDir: (dir: string) => void;
-  onSelectDirectory: (cwd: string) => void;
-  onToggleActiveOnly: () => void;
-  onRefresh: () => void;
-  onGoHome: () => void;
-  onCollapse: () => void;
+  alertedPaths: ReadonlySet<string>;
+  onSelect: (path: string) => void;
+  /** Track (if needed) and switch; resolves to an error message or null. */
+  onOpenPath: (path: string) => Promise<string | null>;
+  onClone: (url: string, destination: string) => Promise<string | null>;
+  onCreateWorktree: (entry: WorkspaceEntry) => void;
+  onDeleteWorktree: (entry: WorkspaceEntry) => void;
+  onRenameBranch: (entry: WorkspaceEntry, newName: string) => void;
+  /** `label` is the rendered row name, for the confirm prompt. */
+  onUntrack: (entry: WorkspaceEntry, label: string) => void;
 }
 
-// Sidebar is always rendered as an overlay — width controlled by parent
+/**
+ * Actions for the sidebar header while the Workspaces section is showing:
+ * deselect (home) and refresh. They live in the Sidebar's header row rather
+ * than a second header inside the panel.
+ */
+export function WorkspaceHeaderActions({
+  onRefresh,
+  onGoHome,
+}: {
+  onRefresh: () => void;
+  onGoHome: () => void;
+}) {
+  return (
+    <>
+      <button
+        className={styles.headerBtn}
+        onClick={onGoHome}
+        title="Deselect workspace"
+        aria-label="Deselect workspace"
+      >
+        <svg {...iconProps}>
+          <path d="M3 10.5L12 3l9 7.5" />
+          <path d="M5 9v11h14V9" />
+        </svg>
+      </button>
+      <button className={styles.headerBtn} onClick={onRefresh} title="Refresh" aria-label="Refresh">
+        <svg {...iconProps}>
+          <polyline points="23 4 23 10 17 10" />
+          <polyline points="1 20 1 14 7 14" />
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+      </button>
+    </>
+  );
+}
+
+const iconProps = {
+  width: 14,
+  height: 14,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+};
 
 const Chevron = ({ open }: { open: boolean }) => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
+  <svg {...iconProps} width={12} height={12}>
     {open ? <path d="M6 9l6 6 6-6" /> : <path d="M9 6l6 6-6 6" />}
   </svg>
 );
 
+const MoreIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="5" cy="12" r="1" fill="currentColor" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+    <circle cx="19" cy="12" r="1" fill="currentColor" />
+  </svg>
+);
+
+interface MenuAction {
+  label: string;
+  danger?: boolean;
+  run: () => void;
+}
+
+/** A linked worktree, auto-listed or tracked on its own. */
+const isLinkedWorktree = (e: WorkspaceEntry) => e.git !== null && !e.git.isMainWorktree;
+
 export default function WorkspacePanel({
-  repos,
-  worktreesByRepo,
+  workspaces,
   orphanSessions,
-  activeWorktreeId,
   activePath,
   alertedPaths,
-  activeOnly,
-  onSelectWorktree,
+  onSelect,
+  onOpenPath,
+  onClone,
   onCreateWorktree,
   onDeleteWorktree,
   onRenameBranch,
-  onCloneRepo,
-  onAddLocalRepo,
-  onDeleteRepo,
-  onRemoveDir,
-  onSelectDirectory,
-  onToggleActiveOnly,
-  onRefresh,
-  onGoHome,
-  onCollapse,
+  onUntrack,
 }: Props) {
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set(repos.map((r) => r.id)));
-  const [renamingWtId, setRenamingWtId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [addMode, setAddMode] = useState<null | 'clone' | 'clone-dest' | 'browse'>(null);
-  const [cloneUrl, setCloneUrl] = useState('');
-  const [cloning, setCloning] = useState(false);
-  const [cloneError, setCloneError] = useState<string | null>(null);
-  const [browsePath, setBrowsePath] = useState('/');
-  const [browseDirs, setBrowseDirs] = useState<string[]>([]);
-  const [browseIsRepo, setBrowseIsRepo] = useState(false);
-  const [dividerPercent, setDividerPercent] = useState(50);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [renaming, setRenaming] = useState<{ entry: WorkspaceEntry; value: string } | null>(null);
+  const [menu, setMenu] = useState<{ row: WorkspaceRow; x: number; y: number } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const renameInputRef = useRef<HTMLInputElement>(null);
+  const rows = useMemo(
+    () => buildWorkspaceRows({ workspaces, orphanSessions, alertedPaths }),
+    [workspaces, orphanSessions, alertedPaths],
+  );
 
-  // Row labels disambiguate same-named checkouts; ids are unique but not
-  // readable. See buildRepoLabels.
-  const repoLabels = useMemo(() => buildRepoLabels(repos), [repos]);
-
-  // Expand newly added repos
   useEffect(() => {
-    setExpandedRepos((prev) => {
+    if (!menu) return;
+    const close = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(null);
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [menu]);
+
+  const toggle = (p: string) =>
+    setCollapsed((prev) => {
       const next = new Set(prev);
-      for (const r of repos) next.add(r.id);
+      if (!next.delete(p)) next.add(p);
       return next;
     });
-  }, [repos]);
 
-  const handleDividerDrag = useCallback(({ y }: DragInfo) => {
-    const el = sidebarRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const headerH = 36;
-    const dividerH = 24;
-    const topPanelHeight = y - rect.top - headerH - dividerH / 2;
-    setDividerPercent(Math.min(85, Math.max(15, (topPanelHeight / rect.height) * 100)));
-  }, []);
-
-  const dividerDrag = useResizeDrag({ axis: 'y', onDrag: handleDividerDrag });
-
-  // --- Worktree helpers ---
-  const toggleRepo = (id: string) => {
-    setExpandedRepos((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const handleDoubleClick = (wt: WorktreeInfo) => {
-    setRenamingWtId(wt.id);
-    setRenameValue(wt.branch);
-    setTimeout(() => renameInputRef.current?.select(), 0);
-  };
+  const startRename = (entry: WorkspaceEntry) => setRenaming({ entry, value: entry.git?.branch ?? '' });
 
   const commitRename = useCallback(() => {
-    if (renamingWtId && renameValue.trim()) {
-      onRenameBranch(renamingWtId, renameValue.trim());
+    if (renaming && renaming.value.trim() && renaming.value.trim() !== renaming.entry.git?.branch) {
+      onRenameBranch(renaming.entry, renaming.value.trim());
     }
-    setRenamingWtId(null);
-  }, [renamingWtId, renameValue, onRenameBranch]);
+    setRenaming(null);
+  }, [renaming, onRenameBranch]);
 
-  // --- Clone / Browse ---
-  const fetchBrowse = useCallback(async (dirPath: string) => {
-    const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : '';
-    const res = await fetch(`/api/browse${query}`);
-    if (res.ok) {
-      const data = await res.json();
-      setBrowsePath(data.path);
-      setBrowseDirs(data.dirs);
-      setBrowseIsRepo(data.isGitRepo);
+  const actionsFor = ({ entry, label, discovered }: WorkspaceRow): MenuAction[] => {
+    if (discovered) return [{ label: 'Add to workspaces', run: () => void onOpenPath(entry.path) }];
+    const actions: MenuAction[] = [];
+    if (entry.git?.isMainWorktree) {
+      actions.push({ label: 'New worktree', run: () => onCreateWorktree(entry) });
     }
-  }, []);
-
-  const handleClonePickDest = () => {
-    if (!cloneUrl.trim()) return;
-    setAddMode('clone-dest');
-    setCloneError(null);
-    fetchBrowse('');
+    if (isLinkedWorktree(entry) && entry.git?.branch !== 'HEAD') {
+      actions.push({ label: 'Rename branch', run: () => startRename(entry) });
+    }
+    if (isLinkedWorktree(entry)) {
+      actions.push({ label: 'Delete worktree…', danger: true, run: () => onDeleteWorktree(entry) });
+    }
+    if (entry.parent === null) {
+      actions.push({ label: 'Remove from workspaces', run: () => onUntrack(entry, label) });
+    }
+    return actions;
   };
 
-  const handleCloneConfirm = async () => {
-    if (!cloneUrl.trim()) return;
-    setCloning(true);
-    setCloneError(null);
-    try {
-      const slug = cloneUrl.trim().match(/\/([^/]+?)(\.git)?$/)?.[1] || 'repo';
-      const dest = browsePath + '/' + slug;
-      const res = await onCloneRepo(cloneUrl.trim(), dest);
-      if (!res.ok) {
-        const data = await res.json();
-        setCloneError(data.error || 'Clone failed');
-      } else {
-        setCloneUrl('');
-        setAddMode(null);
-      }
-    } catch {
-      setCloneError('Clone failed');
-    }
-    setCloning(false);
+  const openMenu = (row: WorkspaceRow, x: number, y: number) => {
+    if (actionsFor(row).length > 0) setMenu({ row, x, y });
   };
 
-  const handleBrowseSelect = async () => {
-    setCloning(true);
-    await onAddLocalRepo(browsePath);
-    setCloning(false);
-    setAddMode(null);
-    setBrowsePath('/');
+  const renderRow = (row: WorkspaceRow, depth: number) => {
+    const { entry } = row;
+    const hasChildren = row.children.length > 0;
+    const expanded = !collapsed.has(entry.path);
+    const isRenaming = renaming?.entry.path === entry.path;
+    // Top-level repos show their branch, subtly; nested worktrees are already
+    // labelled by branch.
+    const branch = depth === 0 && entry.git && entry.git.branch !== 'HEAD' ? entry.git.branch : null;
+    const title = [
+      entry.path,
+      entry.exists ? null : 'Folder not found',
+      row.discovered ? 'Not tracked: has terminal sessions' : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return (
+      <div key={entry.path}>
+        <div
+          className={[
+            styles.row,
+            entry.path === activePath ? styles.active : '',
+            entry.exists ? '' : styles.missing,
+            row.discovered ? styles.discovered : '',
+          ].join(' ')}
+          style={{ paddingLeft: 4 + depth * 16 }}
+          onClick={() => onSelect(entry.path)}
+          onDoubleClick={isLinkedWorktree(entry) ? () => startRename(entry) : undefined}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            openMenu(row, e.clientX, e.clientY);
+          }}
+          title={title}
+        >
+          {hasChildren ? (
+            <button
+              className={styles.chevron}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle(entry.path);
+              }}
+              aria-label={expanded ? 'Collapse' : 'Expand'}
+              aria-expanded={expanded}
+            >
+              <Chevron open={expanded} />
+            </button>
+          ) : (
+            <span className={styles.chevronSpacer} />
+          )}
+          <span className={styles.dotSlot}>
+            {alertedPaths.has(entry.path) ? (
+              <span className={styles.alertDot} />
+            ) : (
+              row.live && <span className={styles.sessionDot} />
+            )}
+          </span>
+          {isRenaming ? (
+            <input
+              className={styles.renameInput}
+              value={renaming.value}
+              onChange={(e) => setRenaming({ entry, value: e.target.value })}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setRenaming(null);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.target.select()}
+              aria-label="Branch name"
+              autoFocus
+            />
+          ) : (
+            <>
+              <span className={styles.name}>{row.label}</span>
+              {branch && <span className={styles.branch}>{branch}</span>}
+              <button
+                className={styles.moreBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  openMenu(row, r.right, r.bottom);
+                }}
+                title="Workspace actions"
+                aria-label={`Actions for ${row.label}`}
+                style={actionsFor(row).length === 0 ? { visibility: 'hidden' } : undefined}
+              >
+                <MoreIcon />
+              </button>
+            </>
+          )}
+        </div>
+        {hasChildren && expanded && row.children.map((child) => renderRow(child, depth + 1))}
+      </div>
+    );
   };
-
-  const hasAlert = (wsPath: string) => alertedPaths.has(wsPath);
-  const { orderedDirs, visibleRepos } = filterWorkspacePanelData({
-    repos,
-    worktreesByRepo,
-    orphanSessions,
-    alertedPaths,
-    activeOnly,
-  });
 
   return (
-    <aside ref={sidebarRef} className={styles.panel} aria-label="Workspaces">
-      {/* Header */}
-      <TopBar
-        left={
-          <button style={topBarActionStyle} onClick={onCollapse} title="Close workspaces">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-        }
-        right={
-          <>
-            <button
-              style={{
-                ...topBarActionStyle,
-                color: activeOnly ? 'var(--warning, #d29922)' : undefined,
-              }}
-              onClick={onToggleActiveOnly}
-              title={activeOnly ? 'Show all workspaces' : 'Show active sessions only'}
-              aria-label={activeOnly ? 'Show all workspaces' : 'Show active sessions only'}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 6h10" />
-                <path d="M3 12h18" />
-                <path d="M3 18h10" />
-                <circle cx="18" cy="6" r="2.5" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <button style={topBarActionStyle} onClick={onRefresh} title="Refresh">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="23 4 23 10 17 10" />
-                <polyline points="1 20 1 14 7 14" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-              </svg>
-            </button>
-          </>
-        }
-      >
-        <span className={styles.title} onClick={onGoHome} title="Deselect">
-          WORKSPACES
-        </span>
-      </TopBar>
-
-      {/* WORKTREES panel */}
-      <div className={styles.panel} style={{ height: `${dividerPercent}%` }}>
-        <div className={styles.panelScroll}>
-          {visibleRepos.length === 0 && (
-            <div className={styles.empty}>
-              {activeOnly ? (
-                <>
-                  No active workspaces.
-                  {/* The filter is persisted, so it comes back on after a
-                      restart — when no tmux session has survived, this is the
-                      whole panel. Offer the way out here rather than relying on
-                      the user spotting the tinted toggle in the header. */}
-                  <button type="button" className={styles.emptyAction} onClick={onToggleActiveOnly}>
-                    Show all workspaces
-                  </button>
-                </>
-              ) : (
-                'No repos yet.'
-              )}
-            </div>
-          )}
-          {visibleRepos.map(({ repo, worktrees }) => {
-            const expanded = expandedRepos.has(repo.id);
-            return (
-              <div key={repo.id} className={styles.group}>
-                <div className={styles.groupHeader}>
-                  <button
-                    className={styles.expandBtn}
-                    onClick={() => toggleRepo(repo.id)}
-                    title={expanded ? 'Collapse' : 'Expand'}
-                  >
-                    <Chevron open={expanded} />
-                  </button>
-                  <span
-                    className={styles.groupName}
-                    onClick={() => toggleRepo(repo.id)}
-                    title={repo.path}
-                  >
-                    {repoLabels[repo.id] ?? repo.name}
-                  </span>
-                  <div className={styles.groupActions}>
-                    <button
-                      className={styles.actionBtn}
-                      onClick={() => onCreateWorktree(repo.id)}
-                      title="New worktree"
-                    >
-                      +
-                    </button>
-                    <button
-                      className={styles.actionBtn}
-                      onClick={() => onDeleteRepo(repo.id, repoLabels[repo.id] ?? repo.name)}
-                      title="Remove repo"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-                {expanded && (
-                  <div className={styles.itemList}>
-                    {worktrees.map((wt) => (
-                      <div
-                        key={wt.id}
-                        className={`${styles.item} ${wt.path === activePath ? styles.active : ''}`}
-                        onClick={() => onSelectWorktree(wt)}
-                        onDoubleClick={wt.isMain ? undefined : () => handleDoubleClick(wt)}
-                        title={wt.isMain ? wt.branch : `${wt.branch} — double-click to rename`}
-                      >
-                        {renamingWtId === wt.id ? (
-                          <input
-                            ref={renameInputRef}
-                            className={styles.renameInput}
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={commitRename}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') commitRename();
-                              if (e.key === 'Escape') setRenamingWtId(null);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            autoFocus
-                          />
-                        ) : (
-                          <>
-                            {hasAlert(wt.path) ? (
-                              <span className={styles.alertDot} />
-                            ) : (
-                              wt.sessionCount > 0 && <span className={styles.sessionDot} />
-                            )}
-                            <span className={styles.itemName}>{wt.branch}</span>
-                            {!wt.isMain && (
-                              <button
-                                className={`${styles.actionBtn} ${styles.deleteBtn}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteWorktree(wt);
-                                }}
-                                title="Remove worktree"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+    <aside className={styles.panel} aria-label="Workspaces">
+      <div className={styles.scroll}>
+        {rows.length === 0 && <div className={styles.empty}>No workspaces yet.</div>}
+        {rows.map((row) => renderRow(row, 0))}
       </div>
 
-      {/* Divider */}
-      <div className={styles.divider} {...dividerDrag}>
-        <span className={styles.dividerLabel}>OTHERS</span>
-      </div>
-
-      {/* OTHERS panel */}
-      <div className={styles.panel} style={{ flex: 1 }}>
-        <div className={styles.panelScroll}>
-          {orderedDirs.map(([dir]) => {
-            const isHome = dir.match(/^\/home\/[^/]+$/) || dir.match(/^\/Users\/[^/]+$/);
-            const shortDir = isHome
-              ? '$HOME'
-              : dir.replace(/^\/home\/[^/]+/, '$HOME').replace(/^\/Users\/[^/]+/, '$HOME');
-            const isActive = activePath === dir;
-            return (
-              <div
-                key={dir}
-                className={`${styles.dirItem} ${isActive ? styles.active : ''}`}
-                onClick={() => onSelectDirectory(dir)}
-                title={dir}
-              >
-                {hasAlert(dir) ? (
-                  <span className={styles.alertDot} />
-                ) : (
-                  hasActiveWorkspacePath(dir, 0, orphanSessions, new Set()) && (
-                    <span className={styles.sessionDot} />
-                  )
-                )}
-                <span className={styles.itemName}>{shortDir}</span>
-                {!isHome && (
-                  <button
-                    className={`${styles.actionBtn} ${styles.deleteBtn}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemoveDir(dir);
-                    }}
-                    title="Remove directory"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Footer */}
       <div className={styles.footer}>
-        {cloneError && <div className={styles.errorMsg}>{cloneError}</div>}
-
-        {addMode === null && (
-          <div className={styles.addMenu}>
-            <button
-              className={styles.addBtn}
-              onClick={() => {
-                setAddMode('clone');
-                setCloneError(null);
-              }}
-              title="Clone a repository from a URL"
-            >
-              Clone
-            </button>
-            <button
-              className={styles.addBtn}
-              onClick={() => {
-                setAddMode('browse');
-                fetchBrowse('');
-              }}
-              title="Add a repo or directory"
-            >
-              Add
-            </button>
-          </div>
-        )}
-
-        {addMode === 'clone' && (
-          <div className={styles.dialog}>
-            <input
-              className={styles.dialogInput}
-              placeholder="git@github.com:user/repo.git"
-              value={cloneUrl}
-              onChange={(e) => setCloneUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleClonePickDest();
-                if (e.key === 'Escape') setAddMode(null);
-              }}
-              autoFocus
-              disabled={cloning}
-            />
-            <div className={styles.dialogActions}>
-              <button
-                className={styles.primaryBtn}
-                onClick={handleClonePickDest}
-                disabled={!cloneUrl.trim()}
-              >
-                Next: Pick Folder
-              </button>
-              <button className={styles.secondaryBtn} onClick={() => setAddMode(null)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {addMode === 'clone-dest' && (
-          <div className={styles.dialog}>
-            <div className={styles.browsePath}>Clone to: {browsePath}/</div>
-            <div className={styles.browseList}>
-              <div
-                className={styles.browseItem}
-                onClick={() => fetchBrowse(browsePath.replace(/\/[^/]+$/, '') || '/')}
-              >
-                ..
-              </div>
-              {browseDirs.map((d) => (
-                <div
-                  key={d}
-                  className={styles.browseItem}
-                  onClick={() => fetchBrowse(`${browsePath}/${d}`)}
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className={styles.dialogActions}>
-              <button className={styles.primaryBtn} onClick={handleCloneConfirm} disabled={cloning}>
-                {cloning ? 'Cloning...' : 'Clone Here'}
-              </button>
-              <button
-                className={styles.secondaryBtn}
-                onClick={() => setAddMode('clone')}
-                disabled={cloning}
-              >
-                Back
-              </button>
-            </div>
-          </div>
-        )}
-
-        {addMode === 'browse' && (
-          <div className={styles.dialog}>
-            <div className={styles.browsePath}>{browsePath}</div>
-            <div className={styles.browseList}>
-              {browsePath !== '/' && (
-                <div
-                  className={styles.browseItem}
-                  onClick={() => fetchBrowse(browsePath.replace(/\/[^/]+$/, '') || '/')}
-                >
-                  ..
-                </div>
-              )}
-              {browseDirs.map((d) => (
-                <div
-                  key={d}
-                  className={styles.browseItem}
-                  onClick={() => fetchBrowse(`${browsePath}/${d}`)}
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className={styles.dialogActions}>
-              <button className={styles.primaryBtn} onClick={handleBrowseSelect} disabled={cloning}>
-                {cloning ? 'Adding...' : browseIsRepo ? 'Add Repo' : 'Add Dir'}
-              </button>
-              <button
-                className={styles.secondaryBtn}
-                onClick={() => setAddMode(null)}
-                disabled={cloning}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+        <button className={styles.openBtn} onClick={() => setPickerOpen(true)}>
+          <PlusIcon size={14} />
+          Open…
+        </button>
       </div>
+
+      {menu && (
+        <>
+          <div
+            className={styles.menuCatcher}
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            className={styles.menu}
+            role="menu"
+            style={{
+              // Keep the menu on screen; it opens leftward from the anchor.
+              left: Math.max(8, Math.min(menu.x - 180, window.innerWidth - 188)),
+              top: Math.min(menu.y, window.innerHeight - 160),
+            }}
+          >
+            {actionsFor(menu.row).map((a) => (
+              <button
+                key={a.label}
+                role="menuitem"
+                className={`${styles.menuItem} ${a.danger ? styles.danger : ''}`}
+                onClick={() => {
+                  setMenu(null);
+                  a.run();
+                }}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {pickerOpen && (
+        <OpenPicker
+          workspaces={workspaces}
+          onOpen={onOpenPath}
+          onClone={onClone}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </aside>
   );
 }

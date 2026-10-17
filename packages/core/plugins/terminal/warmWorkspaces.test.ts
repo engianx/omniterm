@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   buildWarmRenderList,
+  mergeRestoredTabs,
   pruneSessionsFromByPath,
+  restoreTabsFromSnapshot,
   survivingTerminalTabs,
   type SessionInfo,
   type WarmSnapshot,
@@ -155,5 +157,89 @@ describe('pruneSessionsFromByPath', () => {
     const byPath = { a: snap(['s1', 's2'], 'wt', 's1') };
     const next = pruneSessionsFromByPath(byPath, new Set(['s2']));
     assert.strictEqual(next.a.activeTabId, 's1');
+  });
+});
+
+describe('restoreTabsFromSnapshot', () => {
+  const page: Tab = { type: 'browser', id: 'browser:s1:1:T', name: 'Page' };
+  const file: Tab = { type: 'file', id: 'file:/a', name: 'a' };
+
+  it('restores the whole strip in order, not just terminals', () => {
+    const snapshot: WarmSnapshot = {
+      sessions: { s1: session('s1') },
+      tabs: [termTab('s1')],
+      allTabs: [termTab('s1'), page, file],
+      activeTabId: page.id,
+    };
+    assert.deepStrictEqual(
+      restoreTabsFromSnapshot(snapshot).map((t) => t.id),
+      ['s1', page.id, file.id],
+    );
+  });
+
+  it('drops parked terminals whose session died, keeps live ones it lacks', () => {
+    const snapshot: WarmSnapshot = {
+      sessions: { s2: session('s2') },
+      tabs: [termTab('s2')],
+      allTabs: [termTab('s1'), file],
+      activeTabId: null,
+    };
+    assert.deepStrictEqual(
+      restoreTabsFromSnapshot(snapshot).map((t) => t.id),
+      [file.id, 's2'],
+    );
+  });
+
+  it('falls back to terminal tabs for snapshots without allTabs', () => {
+    const snapshot: WarmSnapshot = { sessions: {}, tabs: [termTab('s1')], activeTabId: null };
+    assert.deepStrictEqual(restoreTabsFromSnapshot(snapshot), [termTab('s1')]);
+  });
+
+  it('prune keeps allTabs in step and a surviving non-terminal active tab', () => {
+    const byPath = {
+      a: {
+        sessions: { s1: session('s1'), s2: session('s2') },
+        tabs: [termTab('s1'), termTab('s2')],
+        allTabs: [termTab('s1'), termTab('s2'), file],
+        activeTabId: file.id,
+      },
+    };
+    const next = pruneSessionsFromByPath(byPath, new Set(['s2']));
+    assert.deepStrictEqual(next.a.allTabs?.map((t) => t.id), ['s1', file.id]);
+    assert.strictEqual(next.a.activeTabId, file.id);
+  });
+});
+
+describe('mergeRestoredTabs', () => {
+  const file: Tab = { type: 'file', id: 'file:/a', name: 'a' };
+
+  it('uses saved order + names and keeps tabs other integrations re-added', () => {
+    const saved = [{ ...termTab('s2'), name: 'build' }, { ...termTab('s1'), name: 'shell' }];
+    const merged = mergeRestoredTabs({
+      prevTabs: [file],
+      savedTabs: saved,
+      liveSessionIds: ['s1', 's2', 's3'],
+    });
+    assert.deepStrictEqual(
+      merged.map((t) => [t.id, t.name]),
+      [
+        ['s2', 'build'],
+        ['s1', 'shell'],
+        ['s3', 'Term s3'],
+        [file.id, 'a'],
+      ],
+    );
+  });
+
+  it('merges into existing terminals and drops dead ones', () => {
+    const merged = mergeRestoredTabs({
+      prevTabs: [termTab('s1'), file, termTab('dead')],
+      savedTabs: [termTab('s1')],
+      liveSessionIds: ['s1', 's4'],
+    });
+    assert.deepStrictEqual(
+      merged.map((t) => t.id),
+      ['s1', file.id, 's4'],
+    );
   });
 });

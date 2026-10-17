@@ -6,14 +6,13 @@ import { EditorState, type Extension } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { loadLangExtension } from './langExtensions';
-import TopBar, { topBarActionStyle } from './TopBar';
+import TopBar from './TopBar';
 
 interface Props {
   filePath: string;
   original: string;
   modified: string;
   language: string;
-  onBack?: () => void;
 }
 
 const theme = EditorView.theme({
@@ -21,7 +20,7 @@ const theme = EditorView.theme({
   '.cm-scroller': { overflow: 'auto' },
 });
 
-export default function DiffViewer({ filePath, original, modified, language, onBack }: Props) {
+export default function DiffViewer({ filePath, original, modified, language }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
 
@@ -72,26 +71,7 @@ export default function DiffViewer({ filePath, original, modified, language, onB
 
   return (
     <div style={S.container}>
-      <TopBar
-        right={
-          onBack && (
-            <button style={topBarActionStyle} onClick={onBack} title="Close diff">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
-          )
-        }
-      >
+      <TopBar>
         <span style={S.path}>{filePath}</span>
         <span style={S.label}>DIFF</span>
       </TopBar>

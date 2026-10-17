@@ -65,6 +65,19 @@ export interface BrowserView {
    * same name. Absent when the registrant didn't report a pid.
    */
   pid?: number;
+  /**
+   * Which terminal tab opened each page of this Chrome, as `targetId → tabId`.
+   *
+   * One Chrome is shared by every terminal (the shim keeps one instance per
+   * user-data-dir, and each terminal that runs it registers the same CDP
+   * endpoint), so the browser alone says nothing about who a page belongs to.
+   * The opener does: the shim reports the target it opened to its own tab's
+   * registry, and the UI's [+] Browser action does the same after
+   * `Target.createTarget`. The map spans every tab — it is keyed by CDP
+   * endpoint, not by registry — so a client watching one workspace can tell a
+   * page that is someone else's from one nobody has claimed.
+   */
+  pageOwners: Record<string, string>;
 }
 
 interface TabRegistry {
@@ -74,6 +87,58 @@ interface TabRegistry {
 }
 
 const tabs = new Map<string, TabRegistry>();
+
+// ---- Page ownership claims ----
+//
+// `cdpUrl → (targetId → owner tabId)`. Global rather than per-registry because
+// the thing being claimed — a page of a shared Chrome — is global: the latest
+// claim for a target wins whichever registry it came through. Map insertion
+// order doubles as recency, for the cap.
+const claims = new Map<string, Map<string, string>>();
+/** Per-Chrome cap; targets die without telling us, so claims can go stale. */
+const MAX_CLAIMS_PER_BROWSER = 500;
+
+function pageOwnersFor(cdpUrl: string): Record<string, string> {
+  return Object.fromEntries(claims.get(cdpUrl) ?? []);
+}
+
+/** Record a claim. Returns true when it changed anything. */
+function setClaim(cdpUrl: string, targetId: string, ownerTabId: string): boolean {
+  let map = claims.get(cdpUrl);
+  if (!map) claims.set(cdpUrl, (map = new Map()));
+  const prev = map.get(targetId);
+  map.delete(targetId);
+  map.set(targetId, ownerTabId);
+  while (map.size > MAX_CLAIMS_PER_BROWSER) map.delete(map.keys().next().value as string);
+  return prev !== ownerTabId;
+}
+
+/** Tell every registry that lists this Chrome that its claims changed. */
+function notifyClaims(cdpUrl: string): void {
+  for (const reg of tabs.values()) {
+    for (const entry of reg.entries.values()) {
+      if (entry.cdpUrl === cdpUrl) reg.emitter.emit('claims', entry);
+    }
+  }
+}
+
+/** Forget a Chrome's claims once no registry lists it any more. */
+function pruneClaimsIfOrphaned(cdpUrl: string): void {
+  for (const reg of tabs.values()) {
+    for (const entry of reg.entries.values()) if (entry.cdpUrl === cdpUrl) return;
+  }
+  claims.delete(cdpUrl);
+}
+
+/** Record that `ownerTabId` opened `targetId` in the Chrome at `cdpUrl`. */
+export function claimPage(cdpUrl: string, targetId: string, ownerTabId: string): void {
+  if (setClaim(cdpUrl, targetId, ownerTabId)) notifyClaims(cdpUrl);
+}
+
+/** Snapshot of the claims for one Chrome (`targetId → owner tabId`). */
+export function pageOwners(cdpUrl: string): Record<string, string> {
+  return pageOwnersFor(cdpUrl);
+}
 
 function paramValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
@@ -108,6 +173,7 @@ function toView(entry: BrowserEntry, devtoolsFrontendUrl: string): BrowserView {
     pageCdpUrlTemplate: derivePageCdpUrlTemplate(entry.cdpUrl),
     devtoolsFrontendUrl,
     pid: entry.pid,
+    pageOwners: pageOwnersFor(entry.cdpUrl),
   };
 }
 
@@ -145,6 +211,7 @@ const sweep = setInterval(() => {
       if (entry.pid !== undefined && !isAlive(entry.pid)) {
         reg.entries.delete(id);
         reg.emitter.emit('removed', id);
+        pruneClaimsIfOrphaned(entry.cdpUrl);
       }
     }
   }
@@ -160,12 +227,29 @@ export function listBrowsers(tabId: string): BrowserEntry[] {
   return Array.from(tabs.get(tabId)?.entries.values() ?? []);
 }
 
-/** Drop a tab's entire registry (called on tab close). */
+/**
+ * Drop a tab's entire registry and every page claim it holds (called on tab
+ * close). Claims go even for Chromes other tabs still list: a page whose
+ * terminal is gone is nobody's, and the UI falls back to its own placement.
+ */
 export function cleanupTab(tabId: string): void {
   const reg = tabs.get(tabId);
-  if (!reg) return;
-  reg.emitter.removeAllListeners();
-  tabs.delete(tabId);
+  if (reg) {
+    reg.emitter.removeAllListeners();
+    tabs.delete(tabId);
+  }
+  for (const [cdpUrl, map] of [...claims]) {
+    let changed = false;
+    for (const [targetId, owner] of [...map]) {
+      if (owner === tabId) {
+        map.delete(targetId);
+        changed = true;
+      }
+    }
+    if (map.size === 0) claims.delete(cdpUrl);
+    if (changed) notifyClaims(cdpUrl);
+  }
+  if (reg) for (const entry of reg.entries.values()) pruneClaimsIfOrphaned(entry.cdpUrl);
 }
 
 // ========================================================================
@@ -182,6 +266,36 @@ export interface RouterOptions {
    * want a customized DevTools frontend (e.g. testbox's locator picker).
    */
   devtoolsFrontendUrl?: string;
+  /**
+   * Enables `POST /browsers/launch`: start a browser that registers under this
+   * tab (the UI's "new browser tab" when the tab has no live browser). Called
+   * with the tab id, the loopback registry URL its browser must POST to, and
+   * the page to open. Throw `LaunchRejectedError` to refuse (e.g. unknown
+   * tab); anything else is a 500. Unset → the route answers 501.
+   */
+  launchBrowser?: (args: { tabId: string; registryUrl: string; url: string }) => void | Promise<void>;
+}
+
+/** Thrown by a `launchBrowser` implementation to refuse with a client error. */
+export class LaunchRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly status = 404,
+  ) {
+    super(message);
+    this.name = 'LaunchRejectedError';
+  }
+}
+
+/** Only these schemes may be handed to the browser launcher as the first page. */
+function isLaunchableUrl(url: string): boolean {
+  if (url === 'about:blank') return true;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 export function createTabRegistryRouter(opts: RouterOptions): Router {
@@ -202,24 +316,37 @@ export function createTabRegistryRouter(opts: RouterOptions): Router {
   // omniterm-browser wrapper re-POST on every invocation without spamming
   // the UI with duplicates of the same singleton-locked Chrome. Cross-tab
   // is unaffected because each tab has its own `entries` Map.
+  //
+  // Optional `targetId`: the page the registrant just opened, claimed for this
+  // tab (see `pageOwners` on BrowserView). Applied on a dedupe too — that is
+  // the common case, a second `xdg-open` into the shared Chrome.
   router.post('/registry/browsers', (req: Request, res: Response) => {
     const tabId = paramValue(req.params.tabId);
-    const { cdpUrl, label, pid } = (req.body ?? {}) as {
+    const { cdpUrl, label, pid, targetId } = (req.body ?? {}) as {
       cdpUrl?: unknown;
       label?: unknown;
       pid?: unknown;
+      targetId?: unknown;
     };
     if (typeof cdpUrl !== 'string' || !cdpUrl) {
       res.status(400).json({ error: 'cdpUrl is required' });
       return;
     }
+    if (targetId !== undefined && (typeof targetId !== 'string' || !targetId)) {
+      res.status(400).json({ error: 'targetId must be a non-empty string' });
+      return;
+    }
     const reg = getOrCreate(tabId);
     for (const [existingId, existing] of reg.entries) {
       if (existing.cdpUrl === cdpUrl) {
+        if (targetId) claimPage(cdpUrl, targetId, tabId);
         res.json({ id: existingId, entry: existing, deduped: true });
         return;
       }
     }
+    // Claim before announcing, so the `added` view already carries it and the
+    // page never shows unowned in between.
+    const claimChanged = targetId ? setClaim(cdpUrl, targetId, tabId) : false;
     const id = String(reg.nextId++);
     const entry: BrowserEntry = {
       id,
@@ -230,7 +357,31 @@ export function createTabRegistryRouter(opts: RouterOptions): Router {
     };
     reg.entries.set(id, entry);
     reg.emitter.emit('added', entry);
+    // Other tabs listing the same Chrome learn of the claim too.
+    if (claimChanged) notifyClaims(cdpUrl);
     res.json({ id, entry });
+  });
+
+  // POST /t/:tabId/registry/browsers/:browserId/pages {targetId}
+  //
+  // Claim a page of a browser already registered here for this tab. Used by
+  // the UI after it creates a page itself (`Target.createTarget`), which no
+  // shim run reports. The latest claim for a target wins.
+  router.post('/registry/browsers/:browserId/pages', (req: Request, res: Response) => {
+    const tabId = paramValue(req.params.tabId);
+    const browserId = paramValue(req.params.browserId);
+    const { targetId } = (req.body ?? {}) as { targetId?: unknown };
+    if (typeof targetId !== 'string' || !targetId) {
+      res.status(400).json({ error: 'targetId is required' });
+      return;
+    }
+    const entry = tabs.get(tabId)?.entries.get(browserId);
+    if (!entry) {
+      res.status(404).json({ error: 'Browser not found' });
+      return;
+    }
+    claimPage(entry.cdpUrl, targetId, tabId);
+    res.json({ claimed: true, pageOwners: pageOwnersFor(entry.cdpUrl) });
   });
 
   // DELETE /t/:tabId/registry/browsers/:browserId
@@ -238,9 +389,41 @@ export function createTabRegistryRouter(opts: RouterOptions): Router {
     const tabId = paramValue(req.params.tabId);
     const browserId = paramValue(req.params.browserId);
     const reg = tabs.get(tabId);
+    const entry = reg?.entries.get(browserId);
     const existed = reg ? reg.entries.delete(browserId) : false;
     if (existed) reg!.emitter.emit('removed', browserId);
+    if (entry) pruneClaimsIfOrphaned(entry.cdpUrl);
     res.status(existed ? 200 : 404).json({ removed: existed });
+  });
+
+  // ---- UI actions ----
+
+  // POST /t/:tabId/browsers/launch {url?} — start a browser for this tab.
+  //
+  // The launcher (the omniterm-browser shim, for terminals) registers the
+  // browser back through `registryUrl`, so the UI learns about it the normal
+  // way: an `added` event on /events, then its pages over CDP. This route only
+  // starts it; 202 means "launch requested", not "browser ready".
+  router.post('/browsers/launch', async (req: Request, res: Response) => {
+    const tabId = paramValue(req.params.tabId);
+    if (!opts.launchBrowser) {
+      res.status(501).json({ error: 'Launching a browser is not supported for this tab type' });
+      return;
+    }
+    const raw = (req.body ?? {}) as { url?: unknown };
+    const url = typeof raw.url === 'string' && raw.url ? raw.url : 'about:blank';
+    if (!isLaunchableUrl(url)) {
+      res.status(400).json({ error: 'url must be about:blank or http(s)' });
+      return;
+    }
+    try {
+      await opts.launchBrowser({ tabId, registryUrl: registryUrlForRequest(req, tabId), url });
+      res.status(202).json({ launched: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const status = err instanceof LaunchRejectedError ? err.status : 500;
+      res.status(status).json({ error: message });
+    }
   });
 
   // ---- UI reads ----
@@ -257,7 +440,9 @@ export function createTabRegistryRouter(opts: RouterOptions): Router {
     });
   });
 
-  // GET /t/:tabId/events — live SSE stream (added/removed)
+  // GET /t/:tabId/events — live SSE stream (added / removed / claims).
+  // `claims` is `{ id, pageOwners }`: the full, current claim map of one of
+  // this tab's browsers, sent whenever any tab's claim on that Chrome changes.
   router.get('/events', (req: Request, res: Response) => {
     const tabId = paramValue(req.params.tabId);
     const reg = getOrCreate(tabId);
@@ -285,9 +470,12 @@ export function createTabRegistryRouter(opts: RouterOptions): Router {
         data: toView(entry, opts.devtoolsFrontendUrl ?? defaultDevtoolsFrontendUrl(entry)),
       });
     const onRemoved = (id: string) => write({ type: 'removed', data: { id } });
+    const onClaims = (entry: BrowserEntry) =>
+      write({ type: 'claims', data: { id: entry.id, pageOwners: pageOwnersFor(entry.cdpUrl) } });
 
     reg.emitter.on('added', onAdded);
     reg.emitter.on('removed', onRemoved);
+    reg.emitter.on('claims', onClaims);
 
     const heartbeat = setInterval(() => {
       res.write(': hb\n\n');
@@ -296,6 +484,7 @@ export function createTabRegistryRouter(opts: RouterOptions): Router {
     req.on('close', () => {
       reg.emitter.off('added', onAdded);
       reg.emitter.off('removed', onRemoved);
+      reg.emitter.off('claims', onClaims);
       clearInterval(heartbeat);
     });
   });

@@ -18,6 +18,13 @@
  * tab's panel surfaces it. The registry de-dupes by cdpUrl, so re-POSTing
  * is harmless within a tab and gives each cross-tab caller its own entry.
  *
+ * Page ownership: every terminal shares this one Chrome, so the browser alone
+ * cannot say which terminal a page belongs to. The shim knows — it opened the
+ * page — so it reports that page's CDP target id with the registration
+ * (`targetId`), and the registry records it as claimed by this tab. Warm path:
+ * the id comes back from /json/new. Cold path: the initial page target, found
+ * on /json/list once CDP is up.
+ *
  * Why a dedicated UDD: keeps real-account cookies / passwords out of any
  * profile that has CDP exposed. Personal Chrome on the laptop is never
  * touched by this wrapper.
@@ -169,7 +176,7 @@ async function readDevToolsActivePort(timeoutMs = 30_000) {
   throw new Error(`Timed out waiting for ${filePath} (${lastErr})`);
 }
 
-async function postRegistration(cdpUrl, pid) {
+async function postRegistration(cdpUrl, pid, targetId) {
   if (!REGISTRY_URL) {
     console.error(
       '[omniterm-browser] OMNITERM_BROWSER_REGISTRY_URL not set — browser launched but not registered. ' +
@@ -181,7 +188,12 @@ async function postRegistration(cdpUrl, pid) {
     const res = await fetch(`${REGISTRY_URL}/browsers`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cdpUrl, label: 'omniterm-browser', pid }),
+      body: JSON.stringify({
+        cdpUrl,
+        label: 'omniterm-browser',
+        pid,
+        ...(targetId ? { targetId } : {}),
+      }),
     });
     if (!res.ok) {
       console.error(`[omniterm-browser] registry POST failed: ${res.status} ${res.statusText}`);
@@ -189,7 +201,8 @@ async function postRegistration(cdpUrl, pid) {
     }
     const data = await res.json();
     console.error(
-      `[omniterm-browser] registered ${data.deduped ? '(deduped) ' : ''}id=${data.id} cdp=${cdpUrl}`,
+      `[omniterm-browser] registered ${data.deduped ? '(deduped) ' : ''}id=${data.id} cdp=${cdpUrl}` +
+        (targetId ? ` page=${targetId}` : ' page=unknown'),
     );
   } catch (err) {
     console.error(`[omniterm-browser] registry POST error: ${String(err)}`);
@@ -312,26 +325,85 @@ async function launchColdWithDisplayFallback(chromeBinary) {
  * does not. Modern Chrome requires PUT on /json/new and answers GET with 405;
  * older builds only accept GET, so try PUT first and fall back.
  *
- * Returns true only if the browser actually accepted the tab.
+ * Returns `{ ok, targetId }`: ok only if the browser actually accepted the
+ * tab, and the new page's target id when Chrome reported it (it answers with
+ * the target's /json descriptor, whose `id` is the target id).
  */
 async function openTabViaCdp(port, url) {
   const endpoint = `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`;
   for (const method of ['PUT', 'GET']) {
     try {
       const res = await fetch(endpoint, { method });
-      if (res.ok) return true;
+      if (res.ok) {
+        let targetId;
+        try {
+          const body = await res.json();
+          if (body && typeof body.id === 'string' && body.id) targetId = body.id;
+        } catch {}
+        return { ok: true, targetId };
+      }
       // 405 means this Chrome wants the other verb; anything else is a real
       // refusal and retrying with GET would just repeat it.
       if (res.status !== 405) {
         console.error(`[omniterm-browser] /json/new ${method} -> ${res.status} ${res.statusText}`);
-        return false;
+        return { ok: false };
       }
     } catch (err) {
       console.error(`[omniterm-browser] /json/new ${method} failed: ${String(err)}`);
-      return false;
+      return { ok: false };
     }
   }
-  return false;
+  return { ok: false };
+}
+
+/** Targets a user would call a tab (mirrors isUserPage in browserTabs.ts). */
+function isUserPageTarget(t) {
+  if (!t || t.type !== 'page' || typeof t.id !== 'string') return false;
+  const url = typeof t.url === 'string' ? t.url : '';
+  return !(
+    url.startsWith('devtools://') ||
+    url.startsWith('chrome-untrusted://') ||
+    /^chrome:\/\/[^/]*\.top-chrome(?:\/|$)/.test(url) ||
+    url.startsWith('chrome://omnibox-popup')
+  );
+}
+
+function sameUrl(a, b) {
+  if (a === b) return true;
+  try {
+    return new URL(a).href === new URL(b).href;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The page a cold-started Chrome opened for URL_ARG, by target id.
+ *
+ * A fresh Chrome with a dedicated profile has exactly one page: the one it was
+ * started with. That is the primary rule — matching on URL alone is weak, since
+ * by the time we look an OAuth URL may already have redirected. Only when there
+ * are several pages (a restored session, a page that opened a popup at once)
+ * does the URL decide, and if nothing matches we claim nothing rather than the
+ * wrong page: an unclaimed page is placed by the UI, a misclaimed one is hidden
+ * from the workspace that opened it.
+ */
+async function findInitialPage(port, url, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json/list`);
+      if (res.ok) {
+        const pages = (await res.json()).filter(isUserPageTarget);
+        if (pages.length === 1) return pages[0].id;
+        const match = pages.find((t) => sameUrl(t.url, url));
+        if (match) return match.id;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.error('[omniterm-browser] could not identify the page it opened; registering without it');
+  return undefined;
 }
 
 /**
@@ -467,8 +539,8 @@ async function main() {
     // registering a browser we never actually reached.
     const { port, wsPath } = await readDevToolsActivePort();
     const opened = await openTabViaCdp(port, URL_ARG);
-    if (opened) {
-      await postRegistration(`ws://127.0.0.1:${port}${wsPath}`, existing.pid);
+    if (opened.ok) {
+      await postRegistration(`ws://127.0.0.1:${port}${wsPath}`, existing.pid, opened.targetId);
       return;
     }
     console.error(
@@ -488,7 +560,8 @@ async function main() {
   // Cold path: own the UDD, enable CDP, then register. The helper clears any
   // stale DevToolsActivePort before each attempt — see the note there.
   const { port, wsPath, pid } = await launchColdWithDisplayFallback(chromeBinary);
-  await postRegistration(`ws://127.0.0.1:${port}${wsPath}`, pid);
+  const targetId = REGISTRY_URL ? await findInitialPage(port, URL_ARG) : undefined;
+  await postRegistration(`ws://127.0.0.1:${port}${wsPath}`, pid, targetId);
 }
 
 main().catch((err) => {

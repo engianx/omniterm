@@ -11,8 +11,8 @@ interface Props {
   dirPath: string;
   /** Bumped by the parent when the user wants a manual reload. */
   reloadKey?: number;
-  /** Mobile back affordance, mirrors FileViewer's. */
-  onBack?: () => void;
+  /** Manual reload (re-renders markdown / re-fetches the HTML page). */
+  onReload?: () => void;
 }
 
 /**
@@ -28,7 +28,7 @@ interface Props {
  *   can be interactive — `allow-same-origin` is intentionally omitted to
  *   keep the page from poking at omniterm's own APIs.
  */
-export default function PreviewPane({ filePath, dirPath, reloadKey, onBack }: Props) {
+export default function PreviewPane({ filePath, dirPath, reloadKey, onReload }: Props) {
   const [markdownDoc, setMarkdownDoc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,6 +36,25 @@ export default function PreviewPane({ filePath, dirPath, reloadKey, onBack }: Pr
 
   const kind = detectPreviewKind(filePath);
   const absPath = `${dirPath}/${filePath}`;
+
+  const reloadButton = onReload ? (
+    <button style={topBarActionStyle} onClick={onReload} title="Reload preview" aria-label="Reload preview">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="23 4 23 10 17 10" />
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+      </svg>
+    </button>
+  ) : null;
 
   useEffect(() => {
     if (kind !== 'markdown') return;
@@ -66,26 +85,7 @@ export default function PreviewPane({ filePath, dirPath, reloadKey, onBack }: Pr
   if (kind === null) {
     return (
       <div style={S.container}>
-        <TopBar
-          right={
-            onBack ? (
-              <button style={topBarActionStyle} onClick={onBack} title="Back to file tree">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            ) : null
-          }
-        >
+        <TopBar>
           <span style={S.path}>{filePath}</span>
         </TopBar>
         <div style={S.empty}>Preview not supported for this file type.</div>
@@ -99,26 +99,7 @@ export default function PreviewPane({ filePath, dirPath, reloadKey, onBack }: Pr
 
   return (
     <div style={S.container}>
-      <TopBar
-        right={
-          onBack ? (
-            <button style={topBarActionStyle} onClick={onBack} title="Back to file tree">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
-          ) : null
-        }
-      >
+      <TopBar right={reloadButton}>
         <span style={S.path} title={absPath}>
           {filePath}
         </span>
